@@ -11,6 +11,13 @@ import { BarretenbergSync, Fr } from '@aztec/bb.js';
 import type { Point, Commitment } from './types.js';
 import { randomFieldElement, toField } from './utils.js';
 
+/**
+ * Generator index offset for Barretenberg's pedersen_commitment.
+ * Using 0 selects the default generators (G0, G1, ...) from Barretenberg's
+ * precomputed table. These match Noir's std::hash::pedersen_commitment.
+ */
+const PEDERSEN_GENERATOR_INDEX = 0;
+
 // Lazy initialization of Barretenberg
 let bbInitialized = false;
 let bb: BarretenbergSync;
@@ -65,8 +72,8 @@ export async function pedersenCommit(secret: bigint, blinding?: bigint): Promise
     toFr(toField(blindingFactor)),
   ];
   
-  const result = api.pedersenCommit(inputs, 0);
-  
+  const result = api.pedersenCommit(inputs, PEDERSEN_GENERATOR_INDEX);
+
   return {
     point: {
       x: fromFr(result.x),
@@ -92,8 +99,8 @@ export function pedersenCommitSync(secret: bigint, blinding?: bigint): Commitmen
     toFr(toField(blindingFactor)),
   ];
   
-  const result = bb.pedersenCommit(inputs, 0);
-  
+  const result = bb.pedersenCommit(inputs, PEDERSEN_GENERATOR_INDEX);
+
   return {
     point: {
       x: fromFr(result.x),
