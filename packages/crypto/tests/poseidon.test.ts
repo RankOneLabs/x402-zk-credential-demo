@@ -54,4 +54,8 @@ describe('Poseidon Hash', () => {
     const result = poseidonHash([reduced]);
     expect(typeof result).toBe('bigint');
   });
+  
+  it('should throw error for empty array', () => {
+    expect(() => poseidonHash([])).toThrow('Poseidon hash requires at least one input');
+  });
 });
