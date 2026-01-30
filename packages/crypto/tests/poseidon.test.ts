@@ -57,6 +57,7 @@ describe('Poseidon Hash', () => {
   
   it('should throw error for empty array', () => {
     expect(() => poseidonHash([])).toThrow('Poseidon hash requires at least one input');
+  });
 
   it('should match circomlibjs/poseidon-lite reference vector', () => {
     // Reference test vector from poseidon-lite / circomlibjs
