@@ -75,7 +75,9 @@ export class CredentialIssuer {
     }
     
     // 2. Determine tier from payment amount
-    const tierConfig = this.tiers.find(t => payment.amountUSDC * 100 >= t.minAmountCents);
+    // Convert to integer cents to avoid floating-point precision issues
+    const amountCents = Math.round(payment.amountUSDC * 100);
+    const tierConfig = this.tiers.find(t => amountCents >= t.minAmountCents);
     if (!tierConfig) {
       throw new Error(`Payment amount $${payment.amountUSDC} below minimum tier`);
     }
