@@ -2,8 +2,6 @@
  * Types for credential issuance
  */
 
-import type { Point, SchnorrSignature } from '@zk-session/crypto';
-
 /** Request to issue a credential */
 export interface IssuanceRequest {
   /** Proof of x402 payment (transaction hash or facilitator receipt) */
