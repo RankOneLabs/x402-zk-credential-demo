@@ -33,8 +33,8 @@ export interface ZkSessionConfig {
   skipProofVerification?: boolean;
 }
 
-/** Discriminated union for verification results */
-export type VerificationResult = 
+/** Discriminated union for session verification results */
+export type SessionVerificationResult = 
   | { valid: true; tier: number; originToken: string }
   | { valid: false; error: string };
 
@@ -124,7 +124,7 @@ export class ZkSessionMiddleware {
   /**
    * Verify a request's ZK session headers
    */
-  async verifyRequest(req: Request): Promise<VerificationResult> {
+  async verifyRequest(req: Request): Promise<SessionVerificationResult> {
     // Extract headers
     const proofB64 = req.headers['zk-session-proof'] as string | undefined;
     const originToken = req.headers['zk-session-token'] as string | undefined;

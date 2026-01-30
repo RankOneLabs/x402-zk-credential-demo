@@ -26,7 +26,7 @@ export interface ProofData {
   publicInputs: string[];
 }
 
-export interface VerificationResult {
+export interface ProofVerificationResult {
   valid: boolean;
   /** Extracted public outputs: [origin_token, tier] */
   outputs?: {
@@ -140,7 +140,7 @@ export class ZkVerifier {
    * @param proofData - The proof and public inputs
    * @returns Verification result with extracted outputs
    */
-  async verify(proofData: ProofData): Promise<VerificationResult> {
+  async verify(proofData: ProofData): Promise<ProofVerificationResult> {
     // Validate publicInputs has enough elements for outputs
     // Circuit layout: 5 public inputs + 2 public outputs (origin_token, tier)
     const NUM_PUBLIC_INPUTS = 5;
@@ -250,10 +250,11 @@ export function parseProofFromRequest(proofB64: string): ProofData | null {
         return null;
       }
     } else if (Array.isArray(parsed.proof)) {
-      proofBytes = new Uint8Array(parsed.proof);
-      if (proofBytes.length === 0) {
+      // Validate non-empty array before conversion
+      if (parsed.proof.length === 0) {
         return null;
       }
+      proofBytes = new Uint8Array(parsed.proof);
     } else {
       return null;
     }
