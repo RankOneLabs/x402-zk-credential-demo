@@ -10,7 +10,7 @@
 import { bn254 } from '@noble/curves/bn254';
 import type { Point, SchnorrSignature } from './types.js';
 import { poseidonHash } from './poseidon.js';
-import { randomFieldElement, toField, FIELD_MODULUS } from './utils.js';
+import { randomFieldElement, toField } from './utils.js';
 
 const G1 = bn254.G1.ProjectivePoint;
 const G = G1.BASE;
