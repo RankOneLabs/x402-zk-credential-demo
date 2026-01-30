@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "circuits": [
+    {
+      "name": "x402_zk_session",
+      "displayName": "ZK Session Demo",
+      "path": ".",
+      "description": "ZK proof of credential ownership with tier-based access",
+      "constraintBudget": 100000,
+      "benchmarkRuns": 5
+    }
+  ],
+  "paths": {
+    "reports": "./reports",
+    "verifiers": "./verifiers"
+  },
+  "backend": {
+    "path": "bb"
+  }
+}
