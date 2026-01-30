@@ -9,6 +9,7 @@ import {
   http,
   type Hash,
   type Log,
+  defineChain,
 } from 'viem';
 import { baseSepolia } from 'viem/chains';
 
@@ -19,6 +20,44 @@ const USDC_ADDRESSES: Record<number, `0x${string}`> = {
   // Local Anvil (forked from Base Sepolia)
   31337: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 };
+
+// Define local Anvil chain (typically forked from Base Sepolia)
+const anvil = defineChain({
+  id: 31337,
+  name: 'Anvil',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['http://127.0.0.1:8545'] },
+  },
+  testnet: true,
+});
+
+/**
+ * Get the appropriate chain configuration based on chainId
+ */
+function getChain(chainId: number, rpcUrl?: string) {
+  if (chainId === 84532) {
+    return baseSepolia;
+  } else if (chainId === 31337) {
+    return anvil;
+  } else {
+    // For unknown chains, require an RPC URL
+    if (!rpcUrl) {
+      throw new Error(
+        `Chain ID ${chainId} is not a known chain. Please provide an rpcUrl in the config.`
+      );
+    }
+    // Create a custom chain definition for unknown chains
+    return defineChain({
+      id: chainId,
+      name: `Chain ${chainId}`,
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+      rpcUrls: {
+        default: { http: [rpcUrl] },
+      },
+    });
+  }
+}
 
 export interface PaymentVerificationConfig {
   /** Chain ID (84532 for Base Sepolia, 31337 for local Anvil) */
@@ -49,11 +88,14 @@ export class PaymentVerifier {
   private usdcDecimals: number;
   
   constructor(private readonly config: PaymentVerificationConfig) {
-    // Create viem client for Base Sepolia (or local Anvil via RPC)
-    // We use baseSepolia chain definition but override the RPC URL
+    // Get the appropriate chain definition based on chainId
+    const chain = getChain(config.chainId, config.rpcUrl);
+    
+    // Create viem client with the correct chain
+    // Use provided RPC URL or fall back to chain's default
     this.client = createPublicClient({
-      chain: baseSepolia,
-      transport: http(config.rpcUrl),
+      chain,
+      transport: http(config.rpcUrl ?? chain.rpcUrls.default.http[0]),
     });
     
     // Get USDC address for this chain
