@@ -17,8 +17,11 @@ export function toField(value: bigint): bigint {
  * Convert a hex string to a bigint
  */
 export function hexToBigInt(hex: string): bigint {
-  if (hex.startsWith('0x')) {
+  if (hex.startsWith('0x') || hex.startsWith('0X')) {
     hex = hex.slice(2);
+  }
+  if (hex.length === 0 || !/^[0-9a-fA-F]+$/.test(hex)) {
+    throw new Error('Invalid hexadecimal string');
   }
   return BigInt('0x' + hex);
 }
