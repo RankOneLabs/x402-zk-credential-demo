@@ -89,7 +89,7 @@ export async function pedersenCommit(secret: bigint, blinding?: bigint): Promise
  */
 export function pedersenCommitSync(secret: bigint, blinding?: bigint): Commitment {
   if (!bbInitialized) {
-    throw new Error('Barretenberg not initialized. Call pedersenCommit() first or await initPedersen()');
+    throw new Error('Barretenberg not initialized. Call await initPedersen() before using pedersenCommitSync().');
   }
   
   const blindingFactor = blinding ?? randomFieldElement();
