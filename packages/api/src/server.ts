@@ -6,6 +6,8 @@
 
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ZkSessionMiddleware, type ZkSessionConfig } from './middleware.js';
 import { hexToBigInt } from '@zk-session/crypto';
 
@@ -115,7 +117,9 @@ export function createApiServer(config: ApiServerConfig) {
 }
 
 // Run as standalone server
-const isMain = import.meta.url === `file://${process.argv[1]}`;
+const thisFile = fileURLToPath(import.meta.url);
+const mainArg = path.resolve(process.argv[1]);
+const isMain = thisFile === mainArg;
 if (isMain) {
   // Get issuer public key from environment or use default
   const issuerPubkeyX = process.env.ISSUER_PUBKEY_X ?? '0x1';
