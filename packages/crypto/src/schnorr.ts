@@ -16,6 +16,36 @@ const G1 = bn254.G1.ProjectivePoint;
 const G = G1.BASE;
 
 /**
+ * Validate a scalar is in valid range [0, FIELD_MODULUS)
+ */
+function validateScalar(value: bigint, name: string): void {
+  if (value < 0n) {
+    throw new Error(`${name} must be non-negative`);
+  }
+  if (value >= FIELD_MODULUS) {
+    throw new Error(`${name} must be less than field modulus`);
+  }
+}
+
+/**
+ * Validate a point is on the curve and not the identity
+ */
+function validatePoint(point: Point, name: string): void {
+  if (point.x < 0n || point.y < 0n) {
+    throw new Error(`${name} coordinates must be non-negative`);
+  }
+  if (point.x === 0n && point.y === 0n) {
+    throw new Error(`${name} cannot be the point at infinity`);
+  }
+  try {
+    // This throws if point is not on curve
+    G1.fromAffine({ x: point.x, y: point.y });
+  } catch {
+    throw new Error(`${name} is not a valid point on the curve`);
+  }
+}
+
+/**
  * Generate a keypair for Schnorr signing
  */
 export function generateKeypair(): { secretKey: bigint; publicKey: Point } {
@@ -44,6 +74,14 @@ export function derivePublicKey(secretKey: bigint): Point {
  * @returns Schnorr signature (R, s)
  */
 export function schnorrSign(secretKey: bigint, message: bigint): SchnorrSignature {
+  // Validate inputs
+  validateScalar(secretKey, 'secretKey');
+  validateScalar(message, 'message');
+  
+  if (secretKey === 0n) {
+    throw new Error('secretKey cannot be zero');
+  }
+
   // Generate random nonce
   const k = randomFieldElement();
   
@@ -78,6 +116,12 @@ export function schnorrVerify(
   message: bigint,
   signature: SchnorrSignature
 ): boolean {
+  // Validate inputs
+  validatePoint(publicKey, 'publicKey');
+  validatePoint(signature.r, 'signature.r');
+  validateScalar(message, 'message');
+  validateScalar(signature.s, 'signature.s');
+
   // e = H(R || pk || m)
   const e = poseidonHash([
     signature.r.x,
