@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import {
   pedersenCommit,
+  pedersenCommitSync,
   verifyCommitment,
   initPedersen,
 } from '../src/pedersen.js';
@@ -56,6 +57,34 @@ describe('Pedersen Commitment', () => {
     // Expected: (0x2f7a8f9a6c96926682205fb73ee43215bf13523c19d7afe36f12760266cdfe15, 
     //            0x01916b316adbbf0e10e39b18c1d24b33ec84b46daddf72f43878bcc92b6057e6)
     const commitment = await pedersenCommit(1n, 1n);
+    
+    expect(commitment.point.x.toString(16)).toBe(
+      '2f7a8f9a6c96926682205fb73ee43215bf13523c19d7afe36f12760266cdfe15'
+    );
+    expect(commitment.point.y.toString(16)).toBe(
+      '1916b316adbbf0e10e39b18c1d24b33ec84b46daddf72f43878bcc92b6057e6'
+    );
+  });
+});
+
+describe('pedersenCommitSync', () => {
+  // Note: beforeAll in the previous describe already initialized BB
+  
+  it('should produce same result as async version', async () => {
+    const secret = 12345n;
+    const blinding = 67890n;
+    
+    const asyncResult = await pedersenCommit(secret, blinding);
+    const syncResult = pedersenCommitSync(secret, blinding);
+    
+    expect(syncResult.point.x).toBe(asyncResult.point.x);
+    expect(syncResult.point.y).toBe(asyncResult.point.y);
+    expect(syncResult.secret).toBe(asyncResult.secret);
+    expect(syncResult.blinding).toBe(asyncResult.blinding);
+  });
+  
+  it('should work with test vector', () => {
+    const commitment = pedersenCommitSync(1n, 1n);
     
     expect(commitment.point.x.toString(16)).toBe(
       '2f7a8f9a6c96926682205fb73ee43215bf13523c19d7afe36f12760266cdfe15'
