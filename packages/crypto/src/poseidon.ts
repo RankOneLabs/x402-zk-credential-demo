@@ -48,19 +48,16 @@ export function poseidonHash3(a: bigint, b: bigint, c: bigint): bigint {
 /**
  * Poseidon hash for 5 inputs (matches Noir's hash_5)
  */
-export function poseidonHash5(inputs: [bigint, bigint, bigint, bigint, bigint]): bigint {
-  return poseidon5(inputs) as bigint;
+export function poseidonHash5(a: bigint, b: bigint, c: bigint, d: bigint, e: bigint): bigint {
+  return poseidon5([a, b, c, d, e]) as bigint;
 }
 
 /**
  * Poseidon hash for 7 inputs (matches Noir's hash_7)
  * Uses sponge construction since poseidon-lite doesn't have a 7-arity version
  */
-export function poseidonHash7(inputs: bigint[]): bigint {
-  if (inputs.length !== 7) {
-    throw new Error('poseidonHash7 requires exactly 7 inputs');
-  }
-  return poseidonSponge(inputs);
+export function poseidonHash7(a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, g: bigint): bigint {
+  return poseidonSponge([a, b, c, d, e, f, g]);
 }
 
 /**

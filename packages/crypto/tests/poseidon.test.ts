@@ -24,12 +24,12 @@ describe('Poseidon Hash', () => {
   });
   
   it('should hash five elements', () => {
-    const result = poseidonHash5([1n, 2n, 3n, 4n, 5n]);
+    const result = poseidonHash5(1n, 2n, 3n, 4n, 5n);
     expect(typeof result).toBe('bigint');
   });
   
   it('should hash seven elements', () => {
-    const result = poseidonHash7([1n, 2n, 3n, 4n, 5n, 6n, 7n]);
+    const result = poseidonHash7(1n, 2n, 3n, 4n, 5n, 6n, 7n);
     expect(typeof result).toBe('bigint');
   });
   
