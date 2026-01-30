@@ -89,7 +89,7 @@ export class CredentialIssuer {
     };
     
     // 4. Compute message hash for signature
-    const message = poseidonHash7([
+    const message = poseidonHash7(
       this.config.serviceId,
       BigInt(tierConfig.tier),
       BigInt(tierConfig.maxPresentations),
@@ -97,7 +97,7 @@ export class CredentialIssuer {
       BigInt(now + tierConfig.durationSeconds),
       userCommitment.x,
       userCommitment.y,
-    ]);
+    );
     
     // 5. Sign with Schnorr
     const signature = schnorrSign(this.config.secretKey, message);
