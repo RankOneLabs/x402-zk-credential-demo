@@ -1,5 +1,5 @@
 // x402 ZK Session Credential Circuit
-// Proves: "I hold a valid credential for this service" without revealing which credential
+// Proves: "I hold a valid credential for this service" while only revealing the credential's tier (and origin token) publicly, not the full credential
 
 mod pedersen;
 mod schnorr;
