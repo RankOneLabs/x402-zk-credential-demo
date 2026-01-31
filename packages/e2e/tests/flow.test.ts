@@ -62,7 +62,11 @@ describe('End-to-End Flow', () => {
     // Cleanup
     afterAll(() => {
         if (anvilProcess) {
-            process.kill(-anvilProcess.pid!); // Kill process group
+            if (process.platform !== 'win32' && anvilProcess.pid !== undefined) {
+                process.kill(-anvilProcess.pid); // Kill process group on POSIX
+            } else {
+                anvilProcess.kill(); // Fallback for Windows or missing PID
+            }
         }
     });
 
