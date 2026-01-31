@@ -225,7 +225,10 @@ describe('End-to-End Flow', () => {
 
         // 3. Request Credential via Client (HTTP)
         console.log('Requesting credential...');
-        const client = new ZkSessionClient();
+        const client = new ZkSessionClient({
+            issuerUrl: `http://localhost:${ISSUER_PORT}`, // Fix: Property 'issuerUrl' is missing in type
+            mockProofs: SKIP_PROOF_VERIFICATION
+        });
 
         const storedCredential = await client.obtainCredential(
             `http://localhost:${ISSUER_PORT}`,
