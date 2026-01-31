@@ -101,11 +101,3 @@ fn test_schnorr_verify() {
     let result = schnorr::verify(pk_x, pk_y, message, r_x, r_y, s_lo, s_hi);
     assert(result, "Schnorr signature should verify");
 }
-
-#[test]
-fn test_print_commitment() {
-    // Get actual Pedersen commitment for our test values
-    let (x, y) = super::pedersen::commit(1, 1);
-    // This will fail and show us the actual values
-    assert(x == 0, "commitment x");
-}
