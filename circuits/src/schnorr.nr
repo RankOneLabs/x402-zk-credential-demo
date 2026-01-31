@@ -79,8 +79,8 @@ fn test_schnorr_placeholder() {
 
 #[test]
 fn test_schnorr_regression() {
-    // Regression test with known working values (verified against JS implementation)
-    // Ensures Poseidon chaining and curve arithmetic remain consistent.
+    // Regression test with a single known-good signature vector (verified against JS implementation).
+    // Checks that Noir's Poseidon hashing and curve arithmetic remain compatible with the JS reference.
     
     // Keypair
     let pk_x: Field = 0x1bd2ca043010eba0fa5e958f0562792b2861e231c2fd59adf48f26b506a12e0b;
