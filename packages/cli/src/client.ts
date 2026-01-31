@@ -184,7 +184,7 @@ export class ZkSessionClient {
     timeBucket?: number
   ): Promise<CachedProof> {
     // TODO: Use @noir-lang/noir_js for actual proof generation
-    // For now, generate a mock proof that will work with skipProofVerification mode
+    // Generates random bytes as a placeholder proof for demo mode (skipProofVerification)
 
     const nullifierSeed = hexToBigInt(credential.nullifierSeed);
 
@@ -195,7 +195,7 @@ export class ZkSessionClient {
       BigInt(presentationIndex)
     );
 
-    // Mock proof (base64 of random bytes)
+    // Mock proof (base64 of random bytes) - placeholder
     const mockProofBytes = new Uint8Array(128);
     crypto.getRandomValues(mockProofBytes);
     const mockProof = Buffer.from(mockProofBytes).toString('base64');

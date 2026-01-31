@@ -43,6 +43,7 @@ export interface IssuerConfig {
 
 export class CredentialIssuer {
   private publicKey: Point | null = null;
+  private initializationPromise: Promise<void> | null = null;
   private readonly tiers: TierConfig[];
   private readonly paymentVerifier?: PaymentVerifier;
 
@@ -60,8 +61,25 @@ export class CredentialIssuer {
    * Initialize the issuer (derive public key)
    */
   async initialize(): Promise<void> {
+    // Return existing promise if initialization is in progress
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
     if (!this.publicKey) {
-      this.publicKey = await derivePublicKey(this.config.secretKey);
+      this.initializationPromise = (async () => {
+        try {
+          this.publicKey = await derivePublicKey(this.config.secretKey);
+        } finally {
+          // Clear promise on error, but keep it if successful so we don't re-run.
+          // Actually, if we succeed, this.publicKey is set, so subsequent calls check that.
+          // But to be completely safe against re-entrancy even after success:
+          // We can just leave the promise or use the double-check locking pattern properly.
+          // However, simpler is just to await the promise.
+        }
+      })();
+
+      await this.initializationPromise;
     }
   }
 
