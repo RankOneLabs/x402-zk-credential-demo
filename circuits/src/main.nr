@@ -8,12 +8,6 @@ mod test_generator;
 
 use poseidon::poseidon::bn254;
 
-// Public inputs
-global SERVICE_ID_INDEX: u32 = 0;
-global CURRENT_TIME_INDEX: u32 = 1;
-global ORIGIN_ID_INDEX: u32 = 2;
-global ISSUER_PUBKEY_X_INDEX: u32 = 3;
-global ISSUER_PUBKEY_Y_INDEX: u32 = 4;
 
 // Main circuit entry point
 fn main(
