@@ -59,8 +59,19 @@ jobs:
           anvil --version
 
       # Compile the circuit
+      # Compile the circuit
       - name: Compile circuit
         run: npm run circuit:build
+
+      # Pre-download CRS to avoid SSL errors in Node.js bb.js
+      - name: Pre-download Aztec CRS
+        run: |
+          mkdir -p ~/.bb-crs
+          # Download first 150MB of G1 data (approx 2.3M points, sufficient for >1M gates)
+          curr_dir=$PWD
+          curl -H "Range: bytes=0-150000000" -L -o ~/.bb-crs/bn254_g1.dat https://crs.aztec.network/g1.dat
+          # Download G2 data
+          curl -L -o ~/.bb-crs/bn254_g2.dat https://crs.aztec.network/g2.dat
 
       # Run E2E tests (starts Anvil, deploys contracts, runs full flow)
       - name: Run E2E tests
