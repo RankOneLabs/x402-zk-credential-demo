@@ -2,6 +2,7 @@
 /**
  * Generate valid Prover.toml test data for the x402_zk_session circuit.
  * Uses the fixed @demo/crypto package (Grumpkin/BN254 friendly).
+ * Note: Grumpkin is a curve defined over the scalar field of BN254.
  */
 
 import {
