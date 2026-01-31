@@ -58,8 +58,8 @@ fn main(
     assert(cred_service_id == service_id, "Service ID mismatch");
     
     // 3. Verify credential is not expired
-    // Using field comparison - expires_at must be greater than current_time
-    assert(utils::field_gt(cred_expires_at, current_time), "Credential expired");
+    // Using field comparison - expires_at must be greater than or equal to current_time
+    assert(utils::field_gte(cred_expires_at, current_time), "Credential expired");
     
     // 4. Verify presentation index is within bounds
     assert(utils::field_lt(presentation_index, cred_max_presentations), "Presentation index out of bounds");
