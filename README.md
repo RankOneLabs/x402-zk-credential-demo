@@ -32,17 +32,20 @@ This demo implements a ZK credential system that replaces x402's SIWx identity l
 
 ```
 x402-zk-session-demo/
-├── circuits/           # Noir ZK circuit
+├── circuits/           # Noir ZK circuit (97 ACIR opcodes)
 │   └── src/
 │       ├── main.nr     # Main circuit entry point
 │       ├── pedersen.nr # Pedersen commitment (wraps stdlib)
 │       ├── schnorr.nr  # Schnorr verification (BN254 + Poseidon)
 │       └── utils.nr    # Field comparison helpers
+├── contracts/          # Solidity contracts (Foundry)
+│   └── src/MockUSDC.sol
 ├── packages/
 │   ├── crypto/         # TypeScript crypto primitives (matches circuits)
 │   ├── issuer/         # Express issuer server (payment → credential)
 │   ├── api/            # Express API server with ZK verification
-│   └── cli/            # CLI client with demo script
+│   ├── cli/            # CLI client with demo script
+│   └── e2e/            # End-to-end tests (Anvil + full flow)
 └── scripts/            # Anvil fork setup, payment demo
 ```
 
@@ -60,7 +63,7 @@ npm install
 # Build all packages
 npm run build
 
-# Run crypto tests (19 tests)
+# Run crypto tests (49 tests)
 npm run test --workspace=@demo/crypto
 
 # Start issuer server (terminal 1)
@@ -77,13 +80,13 @@ npm run demo --workspace=@demo/cli
 
 | Component | Status |
 |-----------|--------|
-| TypeScript crypto (Pedersen, Schnorr, Poseidon) | ✅ Working, 19 tests passing |
-| Issuer server (mock payments) | ✅ Working |
-| API server (dev mode, skip proof verification) | ✅ Working |
+| TypeScript crypto (Pedersen, Schnorr, Poseidon) | ✅ Working, 49 tests passing |
+| Issuer server (mock + on-chain payments) | ✅ Working |
+| API server (ZK proof verification) | ✅ Working |
 | CLI client with demo | ✅ Working |
-| Noir circuits | 🔨 Structured, needs compilation testing |
-| On-chain payment verification | 🔨 Implemented, needs Anvil testing |
-| Full ZK proof generation/verification | 📋 Pending circuit compilation |
+| Noir circuits | ✅ Working, 97 ACIR opcodes, ~400ms prove time |
+| On-chain payment verification | ✅ Working (E2E tested with Anvil) |
+| Full ZK proof generation/verification | ✅ Working, 16KB UltraHonk proofs |
 
 ## Demo Flow
 

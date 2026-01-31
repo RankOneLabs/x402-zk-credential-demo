@@ -200,7 +200,8 @@ User                                    Server
 service_id: Field        // Which service this proof is for
 current_time: Field      // Unix timestamp (or time bucket)
 origin_id: Field         // API endpoint identifier
-issuer_pubkey: Point     // Service's Schnorr public key
+issuer_pubkey_x: Field   // Issuer's Schnorr public key (x coordinate)
+issuer_pubkey_y: Field   // Issuer's Schnorr public key (y coordinate)
 ```
 
 ### Private Inputs (Witness)
@@ -244,7 +245,7 @@ tier: Field              // Access tier for authorization
 
 3. **Expiry check:** Credential not expired
    ```noir
-   assert cred_expires_at > current_time
+   assert cred_expires_at >= current_time
    ```
 
 4. **Presentation bound:** Index within allowed range
@@ -272,7 +273,7 @@ Using UltraHonk proving system (BN254):
 |--------|-------|
 | ACIR opcodes | 97 |
 | Brillig opcodes | 0 |
-| Circuit size (bb gates) | ~28,700 |
+| Expression Width | 4,189 |
 | Proof size | 16,256 bytes (~16 KB) |
 
 **Timing (native `bb prove`):**
@@ -372,7 +373,34 @@ With `max_presentations = 1000`:
 
 ### Package Structure
 
-```\npackages/\n├── crypto/           # Shared cryptographic primitives\n│   ├── pedersen.ts   # @aztec/bb.js Pedersen commitment\n│   ├── schnorr.ts    # @noble/curves BN254 signing\n│   ├── poseidon.ts   # poseidon-lite wrapper (BN254)\n│   └── utils.ts      # Field conversions, hex encoding\n├── issuer/           # Credential issuance server\n│   ├── server.ts     # Express server, /issue endpoint\n│   ├── issuer.ts     # CredentialIssuer class\n│   └── payment-verifier.ts  # On-chain USDC transfer verification\n├── api/              # Protected API server\n│   ├── server.ts     # Express server with protected endpoints\n│   ├── middleware.ts # ZkSessionMiddleware (402 discovery, verification)\n│   ├── verifier.ts   # ZkVerifier (UltraHonk proof verification)\n│   └── ratelimit.ts  # Per-token rate limiting\n├── cli/              # Client SDK\n│   └── client.ts     # ZkSessionClient (credential + proof management)\n├── e2e/              # End-to-end tests\n│   └── tests/flow.test.ts  # Full flow with Anvil + servers\ncircuits/             # Noir ZK circuits\n├── src/main.nr       # Main circuit (97 ACIR opcodes)\n├── src/schnorr.nr    # Schnorr signature verification\n├── src/pedersen.nr   # Pedersen commitment verification\n└── src/utils.nr      # Field comparison helpers\ncontracts/            # Solidity contracts (Foundry)\n└── src/MockUSDC.sol  # ERC20 mock for testing\n```
+```
+packages/
+├── crypto/           # Shared cryptographic primitives
+│   ├── pedersen.ts   # @aztec/bb.js Pedersen commitment
+│   ├── schnorr.ts    # @noble/curves BN254 signing
+│   ├── poseidon.ts   # poseidon-lite wrapper (BN254)
+│   └── utils.ts      # Field conversions, hex encoding
+├── issuer/           # Credential issuance server
+│   ├── server.ts     # Express server, /issue endpoint
+│   ├── issuer.ts     # CredentialIssuer class
+│   └── payment-verifier.ts  # On-chain USDC transfer verification
+├── api/              # Protected API server
+│   ├── server.ts     # Express server with protected endpoints
+│   ├── middleware.ts # ZkSessionMiddleware (402 discovery, verification)
+│   ├── verifier.ts   # ZkVerifier (UltraHonk proof verification)
+│   └── ratelimit.ts  # Per-token rate limiting
+├── cli/              # Client SDK
+│   └── client.ts     # ZkSessionClient (credential + proof management)
+├── e2e/              # End-to-end tests
+│   └── tests/flow.test.ts  # Full flow with Anvil + servers
+circuits/             # Noir ZK circuits
+├── src/main.nr       # Main circuit (97 ACIR opcodes)
+├── src/schnorr.nr    # Schnorr signature verification
+├── src/pedersen.nr   # Pedersen commitment verification
+└── src/utils.nr      # Field comparison helpers
+contracts/            # Solidity contracts (Foundry)
+└── src/MockUSDC.sol  # ERC20 mock for testing
+```
 
 ### Dependency Map
 
@@ -480,7 +508,7 @@ The E2E test (`packages/e2e/tests/flow.test.ts`) validates the complete x402 ZK 
 ### Running the E2E Test
 
 ```bash
-# Full test suite (152 tests)
+# Full test suite (149 tests: 144 passed, 5 skipped)
 npm test
 
 # E2E only
