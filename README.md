@@ -49,6 +49,11 @@ x402-zk-session-demo/
 ## Quick Start
 
 ```bash
+# Clone with submodules (for Foundry contracts)
+git clone --recursive <repo-url>
+# Or if already cloned:
+git submodule update --init --recursive
+
 # Install dependencies
 npm install
 

@@ -10,6 +10,11 @@ circuits/target/
 circuits/proofs/
 circuits/Verifier.sol
 
+# Foundry artifacts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
 # Environment
 .env
 .env.local
