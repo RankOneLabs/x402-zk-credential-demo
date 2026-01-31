@@ -17,7 +17,7 @@ export function poseidonHash(inputs: bigint[]): bigint {
   if (inputs.length === 0) {
     throw new Error('Poseidon hash requires at least one input');
   }
-  
+
   // Use the appropriate arity function
   switch (inputs.length) {
     case 1:
@@ -53,11 +53,25 @@ export function poseidonHash5(a: bigint, b: bigint, c: bigint, d: bigint, e: big
 }
 
 /**
- * Poseidon hash for 7 inputs (matches Noir's hash_7)
- * Uses sponge construction since poseidon-lite doesn't have a 7-arity version
+ * Poseidon hash for 7 inputs.
+ * 
+ * IMPLEMENTATION NOTE:
+ * Uses a hierarchical chaining approach: hash2(hash4(a..d), hash3(e..g)).
+ * 
+ * WARNING: This is a BREAKING CHANGE from the previous sponge construction.
+ * This specific chaining method was chosen to match the manual implementation
+ * in the Noir circuit (`main.nr`), ensuring bit-for-bit compatibility across
+ * the JS and Noir environments.
+ * 
+ * Logic:
+ * h1 = hash_4(a, b, c, d)
+ * h2 = hash_3(e, f, g)
+ * result = hash_2(h1, h2)
  */
 export function poseidonHash7(a: bigint, b: bigint, c: bigint, d: bigint, e: bigint, f: bigint, g: bigint): bigint {
-  return poseidonSponge([a, b, c, d, e, f, g]);
+  const h1 = poseidon4([a, b, c, d]) as bigint;
+  const h2 = poseidon3([e, f, g]) as bigint;
+  return poseidon2([h1, h2]) as bigint;
 }
 
 /**
@@ -71,10 +85,10 @@ export function poseidonHash7(a: bigint, b: bigint, c: bigint, d: bigint, e: big
  */
 function poseidonSponge(inputs: bigint[]): bigint {
   let state = 0n;
-  
+
   for (const input of inputs) {
     state = poseidon2([state, input]) as bigint;
   }
-  
+
   return state;
 }

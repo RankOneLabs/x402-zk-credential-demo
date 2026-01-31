@@ -1,4 +1,6 @@
-# ZK Session Demo
+# x402 ZK Session Demo
+
+> ⚠️ **PROOF OF CONCEPT** - This is a demonstration project for educational and research purposes only. It is NOT production-ready and should NOT be used in any production environment. The cryptographic implementations have not been audited, and the security guarantees are not verified.
 
 Anonymous session credentials for x402 APIs using zero-knowledge proofs.
 
@@ -29,7 +31,7 @@ This demo implements a ZK credential system that replaces x402's SIWx identity l
 ## Project Structure
 
 ```
-zk-session-demo/
+x402-zk-session-demo/
 ├── circuits/           # Noir ZK circuit
 │   └── src/
 │       ├── main.nr     # Main circuit entry point
@@ -54,7 +56,7 @@ npm install
 npm run build
 
 # Run crypto tests (19 tests)
-npm test --workspace=@zk-session/crypto
+npm run test --workspace=@demo/crypto
 
 # Start issuer server (terminal 1)
 npm run issuer
@@ -63,7 +65,7 @@ npm run issuer
 npm run api
 
 # Run demo (terminal 3)
-npm run demo --workspace=@zk-session/cli
+npm run demo --workspace=@demo/cli
 ```
 
 ## Current Status

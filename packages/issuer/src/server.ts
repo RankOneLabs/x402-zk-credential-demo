@@ -19,21 +19,21 @@ export interface IssuerServerConfig extends IssuerConfig {
 export function createIssuerServer(config: IssuerServerConfig) {
   const app = express();
   const issuer = new CredentialIssuer(config);
-  
+
   // Middleware
   app.use(cors({
     origin: config.corsOrigins ?? '*',
   }));
   app.use(express.json());
-  
+
   // Health check
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'zk-session-issuer' });
   });
-  
+
   // Get issuer info (public key, tiers)
-  app.get('/info', (_req, res) => {
-    const pubkey = issuer.getPublicKey();
+  app.get('/info', async (_req, res) => {
+    const pubkey = await issuer.getPublicKey();
     res.json({
       serviceId: config.serviceId.toString(),
       issuerPubkey: {
@@ -48,46 +48,53 @@ export function createIssuerServer(config: IssuerServerConfig) {
       })),
     });
   });
-  
+
   // Issue credential
   app.post('/credentials/issue', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const request = req.body as IssuanceRequest;
-      
+
       // Validate request
       if (!request.userCommitment?.x || !request.userCommitment?.y) {
         res.status(400).json({ error: 'Missing userCommitment' });
         return;
       }
-      
+
       if (!request.paymentProof) {
         res.status(400).json({ error: 'Missing paymentProof' });
         return;
       }
-      
+
       const response = await issuer.issueCredential(request);
       res.json(response);
     } catch (error) {
       next(error);
     }
   });
-  
+
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[Issuer] Error:', err.message);
     res.status(500).json({ error: err.message });
   });
-  
+
   return {
     app,
     start: () => {
-      return new Promise<void>((resolve) => {
-        app.listen(config.port, () => {
-          console.log(`[Issuer] Server running on port ${config.port}`);
-          console.log(`[Issuer] Service ID: ${config.serviceId}`);
-          console.log(`[Issuer] Mock payments: ${config.allowMockPayments ? 'enabled' : 'disabled'}`);
-          resolve();
-        });
+      return new Promise<void>((resolve, reject) => {
+        issuer.initialize()
+          .then(() => {
+            app.listen(config.port, () => {
+              console.log(`[Issuer] Server running on port ${config.port}`);
+              console.log(`[Issuer] Service ID: ${config.serviceId}`);
+              console.log(`[Issuer] Mock payments: ${config.allowMockPayments ? 'enabled' : 'disabled'}`);
+              resolve();
+            });
+          })
+          .catch((err: Error) => {
+            console.error('[Issuer] Failed to initialize:', err.message);
+            reject(err);
+          });
       });
     },
   };
@@ -102,7 +109,7 @@ if (isMain) {
   const chainId = parseInt(process.env.CHAIN_ID ?? '84532'); // Default to Base Sepolia
   const recipientAddress = process.env.RECIPIENT_ADDRESS as `0x${string}` | undefined;
   const rpcUrl = process.env.RPC_URL;
-  
+
   // Default configuration for demo
   const config: IssuerServerConfig = {
     port: parseInt(process.env.PORT ?? '3001'),
@@ -123,7 +130,7 @@ if (isMain) {
       },
     }),
   };
-  
+
   const server = createIssuerServer(config);
   server.start();
 }

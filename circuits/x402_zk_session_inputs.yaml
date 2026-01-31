@@ -1,0 +1,86 @@
+name: x402_zk_session
+description: ZK session credential with Schnorr signature on BN254
+
+inputs:
+  # Service context
+  service_id: 1
+  origin_id: 12345
+  
+  # Credential parameters
+  tier: 1
+  max_presentations: 1000
+  issued_at: 1706547800
+  expires_at: 1800000000   # Far future to avoid expiry issues
+  
+  # User secrets
+  nullifier_seed: 12345
+  blinding_factor: 67890
+  
+  # Presentation context
+  presentation_index: 0
+  
+  # Auto-generated
+  issuer_secret_key: null  # Will be generated
+
+pipeline:
+  # 1. Compute Pedersen commitment: C = nullifier_seed * G0 + blinding * G1
+  - id: commitment
+    op: pedersenCommit
+    args:
+      - $nullifier_seed
+      - $blinding_factor
+
+  # 2. Compute message hash: Poseidon([service_id, tier, max_presentations, issued_at, expires_at, C.x, C.y])
+  - id: message_hash
+    op: poseidonHash
+    args:
+      - $service_id
+      - $tier
+      - $max_presentations
+      - $issued_at
+      - $expires_at
+      - $commitment.x
+      - $commitment.y
+
+  # 3. Sign with Schnorr on BN254
+  - id: signer
+    op: signSchnorrBn254
+    args:
+      - $message_hash
+      - $issuer_secret_key
+
+  # 4. Compute current_time (use issued_at + 100 to ensure validity)
+  - id: current_time
+    op: poseidonHash  # Dummy op just to compute a value
+    args:
+      - 1706547900  # issued_at + 100
+
+outputs:
+  # === Public inputs ===
+  service_id: $service_id
+  current_time: 1706547900
+  origin_id: $origin_id
+  issuer_pubkey_x: $signer.publicKey.x
+  issuer_pubkey_y: $signer.publicKey.y
+  
+  # === Private inputs: Credential ===
+  cred_service_id: $service_id
+  cred_tier: $tier
+  cred_max_presentations: $max_presentations
+  cred_issued_at: $issued_at
+  cred_expires_at: $expires_at
+  cred_commitment_x: $commitment.x
+  cred_commitment_y: $commitment.y
+  
+  # === Private inputs: Signature ===
+  sig_r_x: $signer.signature.r.x
+  sig_r_y: $signer.signature.r.y
+  sig_s_lo: $signer.signature.s_lo
+  sig_s_hi: $signer.signature.s_hi
+  
+  # === Private inputs: User secrets ===
+  nullifier_seed: $nullifier_seed
+  blinding_factor: $blinding_factor
+  
+  # === Private inputs: Presentation context ===
+  presentation_index: $presentation_index

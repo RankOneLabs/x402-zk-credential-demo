@@ -1,4 +1,4 @@
-# @zk-session/crypto
+# @demo/crypto
 
 Cryptographic primitives for ZK session credentials. Must match Noir circuit implementations exactly.
 
@@ -17,7 +17,7 @@ Cryptographic primitives for ZK session credentials. Must match Noir circuit imp
 The Barretenberg WASM must initialize before first use:
 
 ```typescript
-import { pedersenCommit } from '@zk-session/crypto';
+import { pedersenCommit } from '@demo/crypto';
 
 // Must await - WASM initializes on first call
 const commitment = await pedersenCommit(secret, blinding);

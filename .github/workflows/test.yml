@@ -24,5 +24,13 @@ jobs:
       - name: Build packages
         run: npm run build
 
+      - name: Install Nargo
+        uses: noir-lang/noirup@v0.1.2
+        with:
+          toolchain: stable
+
+      - name: Run circuit tests
+        run: npm run circuit:test
+
       - name: Run tests
         run: npm test

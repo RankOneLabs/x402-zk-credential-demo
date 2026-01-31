@@ -1,5 +1,5 @@
 /**
- * @zk-session/crypto
+ * @demo/crypto
  * 
  * Cryptographic primitives for ZK Session credentials.
  * These implementations must match the Noir circuit exactly.

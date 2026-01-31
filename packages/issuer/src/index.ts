@@ -1,5 +1,5 @@
 /**
- * @zk-session/issuer
+ * @demo/issuer
  * 
  * Credential issuer server for ZK Session.
  * Issues signed credentials after x402 payment verification.

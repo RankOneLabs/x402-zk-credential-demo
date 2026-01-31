@@ -1,5 +1,5 @@
 {
-  "name": "@zk-session/crypto",
+  "name": "@demo/crypto",
   "version": "0.1.0",
   "description": "Cryptographic primitives for ZK Session (Pedersen, Schnorr, Poseidon)",
   "type": "module",

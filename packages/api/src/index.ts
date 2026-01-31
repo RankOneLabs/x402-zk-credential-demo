@@ -1,5 +1,5 @@
 /**
- * @zk-session/api
+ * @demo/api
  * 
  * API server with ZK proof verification middleware.
  */

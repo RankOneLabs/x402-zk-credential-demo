@@ -34,3 +34,6 @@ npm-debug.log*
 # Test coverage
 coverage/
 .nyc_output/
+
+# Generated Inputs
+circuits/Prover.toml

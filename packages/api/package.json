@@ -1,5 +1,5 @@
 {
-  "name": "@zk-session/api",
+  "name": "@demo/api",
   "version": "0.1.0",
   "description": "ZK Session API server with proof verification and rate limiting",
   "type": "module",
@@ -15,7 +15,7 @@
   "dependencies": {
     "@aztec/bb.js": "^2.1.11",
     "@noir-lang/noir_js": "^1.0.0-beta.18",
-    "@zk-session/crypto": "*",
+    "@demo/crypto": "*",
     "cors": "^2.8.5",
     "express": "^4.18.2"
   },
