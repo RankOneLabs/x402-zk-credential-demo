@@ -90,14 +90,15 @@ npm run demo --workspace=@demo/cli
 
 ## Demo Flow
 
-The demo runs with **mock payments** (no real chain needed):
+The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
-1. Client generates secrets locally (`nullifier_seed`, `blinding_factor`)
-2. Client computes Pedersen commitment (hides secrets from issuer)
-3. Client sends mock payment proof + commitment to issuer
-4. Issuer returns signed credential
-5. Client makes authenticated API requests
-6. API server verifies proofs and applies rate limiting
+1. Start Anvil fork: `./scripts/start-anvil-fork.sh`
+2. Client generates secrets locally (`nullifier_seed`, `blinding_factor`)
+3. Client computes Pedersen commitment (hides secrets from issuer)
+4. Client sends USDC payment + commitment to issuer
+5. Issuer verifies on-chain payment and returns signed credential
+6. Client makes authenticated API requests
+7. API server verifies proofs and applies rate limiting
 
 ## Privacy Budget
 
