@@ -12,7 +12,6 @@
 
 import { ZkSessionClient } from './client.js';
 
-const FACILITATOR_URL = process.env.FACILITATOR_URL ?? 'http://localhost:3001';
 const API_URL = process.env.API_URL ?? 'http://localhost:3002';
 
 async function main() {
