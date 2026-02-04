@@ -3,7 +3,8 @@
 **Extension ID:** `zk-session`  
 **Version:** 0.1.0  
 **Status:** Draft  
-**Last Updated:** 2026-02-03
+**Last Updated:** 2026-02-04  
+**x402 Compatibility:** v2
 
 ---
 
@@ -40,63 +41,110 @@ This extension enables **pay-once, redeem-many** access to x402-protected resour
 | Entity | Role |
 |--------|------|
 | **Client** | Requests protected resource, performs x402 payment, proves credential possession |
-| **Server** | Protected resource server. Verifies ZK proofs for access control |
+| **Server** | Protected resource server. Verifies ZK proofs for access control. Mediates facilitator communication. |
 | **Facilitator** | x402 intermediary that verifies/settles payment AND issues session credentials |
 
 The **Facilitator is the Issuer**. This follows naturally from x402's architecture:
-- Client already sends payment to facilitator
-- Facilitator already returns payment confirmation
+- Server already sends payment to facilitator for verification/settlement
 - Credential issuance piggybacks on this existing flow
 - No additional trust assumptions required
+
+**Note:** In x402 v2, clients communicate only with the server. The server handles all facilitator communication. This extension follows that pattern.
 
 ---
 
 ## 5. Flow Overview
 
-### 5.1 Standard x402 (reference)
+### 5.1 Standard x402 v2 (reference)
 
 ```
 1. Client → Server:      GET /resource
-2. Server → Client:      402 Payment Required (includes facilitator info)
-3. Client → Facilitator: Payment
-4. Facilitator → Client: Payment confirmation
-5. Client → Server:      GET /resource + X-PAYMENT
-6. Server → Client:      200 OK
+2. Server → Client:      402 Payment Required
+                         PAYMENT-REQUIRED: <base64 PaymentRequirements>
+3. Client → Server:      GET /resource
+                         PAYMENT-SIGNATURE: <base64 PaymentPayload>
+4. Server → Facilitator: POST /verify (PaymentPayload, PaymentRequirements)
+5. Facilitator → Server: VerifyResponse
+6. Server → Facilitator: POST /settle (PaymentPayload, PaymentRequirements)
+7. Facilitator → Server: SettleResponse
+8. Server → Client:      200 OK + resource
+                         PAYMENT-RESPONSE: <base64 SettleResponse>
 ```
 
-### 5.2 x402 + zk-session
+### 5.2 x402 v2 + zk-session
 
 ```
+PHASE 1: Payment + Credential Issuance (follows x402 v2 canonical flow)
+─────────────────────────────────────────────────────────────────────
 1. Client → Server:      GET /resource
-2. Server → Client:      402 + zk_session extension advertised
-3. Client → Facilitator: Payment + commitment
-4. Facilitator → Client: Payment confirmation + signed credential
-5. Client → Server:      GET /resource + Authorization: ZKSession <proof>
-6. Server → Client:      200 OK
+2. Server → Client:      402 Payment Required
+                         PAYMENT-REQUIRED: <base64 PaymentRequirements + zk_session extension>
+3. Client → Server:      GET /resource
+                         PAYMENT-SIGNATURE: <base64 PaymentPayload + zk_session commitment>
+4. Server → Facilitator: POST /verify (PaymentPayload, PaymentRequirements)
+5. Facilitator → Server: VerifyResponse
+6. Server → Facilitator: POST /settle (PaymentPayload, PaymentRequirements, zk_session commitment)
+7. Facilitator → Server: SettleResponse + zk_session credential
+8. Server → Client:      200 OK + resource
+                         PAYMENT-RESPONSE: <base64 SettleResponse + zk_session credential>
 
-(Steps 5-6 repeat until credential expires or max_presentations reached)
+PHASE 2: Private Redemption (separate requests, unlinkable to payment)
+─────────────────────────────────────────────────────────────────────
+9.  Client → Server:     GET /resource
+                         Authorization: ZKSession <scheme>:<base64-proof>
+10. Server:              Verify proof locally (no facilitator call)
+11. Server → Client:     200 OK + resource
+
+(Steps 9-11 repeat until credential expires or max_presentations reached)
 ```
 
-The key change: Step 3-4 bundles credential issuance with payment confirmation. The facilitator:
-- Verifies/settles payment (existing role)
-- Signs and returns session credential (new role)
+### 5.3 Why Two Phases Are Necessary
+
+**Privacy requires temporal separation.**
+
+In standard x402, the server sees both payment identity (in `PAYMENT-SIGNATURE`) and resource access in the same request. If zk-session redemption occurred in that same request, the server could trivially link them, defeating the privacy goal.
+
+By separating payment (Phase 1) from redemption (Phase 2):
+- Phase 1: Server learns payment identity but only delivers one response
+- Phase 2: Server sees only an unlinkable ZK proof with no connection to Phase 1
+
+This is an **intentional deviation** from the "one request after payment" pattern of standard x402, and is fundamental to the privacy guarantee.
 
 ---
 
 ## 6. Extension Advertisement
 
-When returning `402 Payment Required`, servers supporting zk-session include:
+When returning `402 Payment Required`, servers supporting zk-session include the extension in the `PAYMENT-REQUIRED` header payload:
+
+```
+HTTP/1.1 402 Payment Required
+PAYMENT-REQUIRED: <base64-encoded payload below>
+```
+
+**Decoded payload:**
 
 ```json
 {
-  "x402": {
-    "payment_requirements": { /* standard x402 */ },
-    "extensions": {
-      "zk_session": {
-        "version": "0.1",
-        "schemes": ["pedersen-schnorr-bn254"],
-        "facilitator_pubkey": "pedersen-schnorr-bn254:0x04abc..."
-      }
+  "x402Version": 2,
+  "accepts": [
+    {
+      "scheme": "exact",
+      "network": "eip155:8453",
+      "maxAmountRequired": "100000",
+      "resource": "https://api.example.com/data",
+      "description": "API access",
+      "payTo": "0x1234...",
+      "maxTimeoutSeconds": 300,
+      "asset": "0xABCD...",
+      "extra": null
+    }
+  ],
+  "extensions": {
+    "zk_session": {
+      "version": "0.1",
+      "schemes": ["pedersen-schnorr-bn254"],
+      "facilitator_pubkey": "pedersen-schnorr-bn254:0x04abc...",
+      "max_credential_ttl": 86400
     }
   }
 }
@@ -107,8 +155,9 @@ When returning `402 Payment Required`, servers supporting zk-session include:
 | `version` | Spec version |
 | `schemes` | Supported cryptographic schemes (see §12) |
 | `facilitator_pubkey` | Scheme-prefixed public key for credential verification |
+| `max_credential_ttl` | Optional. Maximum credential lifetime in seconds the server will accept |
 
-The `credential_endpoint` is implicit - credentials are issued by the facilitator as part of the payment flow. Clients that don't support zk-session ignore the extension and use standard x402.
+Clients that don't support zk-session ignore `extensions.zk_session` and use standard x402.
 
 ---
 
@@ -116,7 +165,7 @@ The `credential_endpoint` is implicit - credentials are issued by the facilitato
 
 ### 7.1 Client Preparation
 
-Before payment, client generates locally (never sent to facilitator):
+Before payment, client generates locally (never sent to anyone):
 - `nullifier_seed` — random secret
 - `blinding_factor` — random blinding value
 
@@ -125,42 +174,121 @@ Client computes:
 
 ### 7.2 Payment Request with Commitment
 
-Client includes commitment in the x402 payment request to facilitator:
+Client includes commitment in the `extensions` object of the `PAYMENT-SIGNATURE` payload:
 
 ```json
 {
-  "payment": { /* standard x402 payment */ },
-  "zk_session": {
-    "commitment": "pedersen-schnorr-bn254:0x..."
-  }
-}
-```
-
-### 7.3 Payment Response with Credential
-
-Facilitator returns credential alongside payment confirmation:
-
-```json
-{
-  "payment_receipt": { /* standard x402 receipt */ },
-  "zk_session": {
-    "credential": {
-      "scheme": "pedersen-schnorr-bn254",
-      "service_id": "0xabc123...",
-      "tier": 1,
-      "max_presentations": 1000,
-      "issued_at": 1706918400,
-      "expires_at": 1707004800,
-      "commitment": "0x...",
-      "signature": "0x..."
+  "x402Version": 2,
+  "scheme": "exact",
+  "network": "eip155:8453",
+  "payload": {
+    "signature": "0x...",
+    "authorization": {
+      "from": "0x...",
+      "to": "0x...",
+      "value": "100000",
+      "validAfter": "1706918400",
+      "validBefore": "1706922000",
+      "nonce": "0x..."
+    }
+  },
+  "extensions": {
+    "zk_session": {
+      "commitment": "pedersen-schnorr-bn254:0x..."
     }
   }
 }
 ```
 
+### 7.3 Server Forwards to Facilitator
+
+Server calls facilitator's `/settle` endpoint with standard v2 fields plus zk-session extension:
+
+**Request to facilitator:**
+
+```json
+{
+  "paymentPayload": { /* from PAYMENT-SIGNATURE */ },
+  "paymentRequirements": { /* from server config */ },
+  "extensions": {
+    "zk_session": {
+      "commitment": "pedersen-schnorr-bn254:0x..."
+    }
+  }
+}
+```
+
+**Note:** This requires a facilitator that supports the zk-session extension. Non-supporting facilitators will ignore the `extensions` field and process standard settlement only.
+
+### 7.4 Facilitator Response with Credential
+
+Facilitator returns credential in the settlement response:
+
+```json
+{
+  "success": true,
+  "transaction": "0x...",
+  "network": "eip155:8453",
+  "payer": "0x...",
+  "extensions": {
+    "zk_session": {
+      "credential": {
+        "scheme": "pedersen-schnorr-bn254",
+        "service_id": "0xabc123...",
+        "tier": 1,
+        "max_presentations": 1000,
+        "issued_at": 1706918400,
+        "expires_at": 1707004800,
+        "commitment": "0x...",
+        "signature": "0x..."
+      }
+    }
+  }
+}
+```
+
+### 7.5 Server Returns Credential to Client
+
+Server includes the credential in the `PAYMENT-RESPONSE` header:
+
+```
+HTTP/1.1 200 OK
+PAYMENT-RESPONSE: <base64-encoded payload below>
+Content-Type: application/json
+
+{"data": "...first response..."}
+```
+
+**Decoded PAYMENT-RESPONSE:**
+
+```json
+{
+  "success": true,
+  "transaction": "0x...",
+  "network": "eip155:8453",
+  "extensions": {
+    "zk_session": {
+      "credential": {
+        "scheme": "pedersen-schnorr-bn254",
+        "service_id": "0xabc123...",
+        "tier": 1,
+        "max_presentations": 1000,
+        "issued_at": 1706918400,
+        "expires_at": 1707004800,
+        "commitment": "0x...",
+        "signature": "0x..."
+      }
+    }
+  }
+}
+```
+
+### 7.6 Credential Fields
+
 | Field | Description |
 |-------|-------------|
-| `service_id` | Identifies the service/API |
+| `scheme` | Cryptographic scheme used |
+| `service_id` | Identifies the service/API (RECOMMENDED: hash of resource URL or server-assigned) |
 | `tier` | Access level (0, 1, 2, ...) — derived from payment amount |
 | `max_presentations` | Maximum proof presentations allowed |
 | `issued_at` | Unix timestamp of issuance |
@@ -168,15 +296,15 @@ Facilitator returns credential alongside payment confirmation:
 | `commitment` | Client's commitment (echoed back) |
 | `signature` | Facilitator signature over all fields |
 
-**Facilitator MUST NOT** store or log commitment-to-payment mappings beyond operational needs.
+**Facilitator MUST NOT** store or log commitment-to-payment mappings beyond immediate operational needs.
 
 ---
 
-## 8. Credential Presentation
+## 8. Credential Presentation (Private Redemption)
 
 ### 8.1 Transport
 
-Clients present credentials via the `Authorization` header:
+For subsequent requests, clients present credentials via the `Authorization` header:
 
 ```
 Authorization: ZKSession <scheme>:<base64-proof>
@@ -189,6 +317,11 @@ Host: api.example.com
 Authorization: ZKSession pedersen-schnorr-bn254:eyJwcm9vZiI6...
 ```
 
+**Note:** The `Authorization` header is used instead of `PAYMENT-SIGNATURE` because:
+- ZK proofs are redemption tokens, not payment payloads
+- This allows servers to distinguish payment requests from redemption requests
+- Redemption does not require facilitator involvement
+
 ### 8.2 Proof Public Inputs
 
 The server provides or derives these values for verification:
@@ -197,7 +330,7 @@ The server provides or derives these values for verification:
 |-------|--------|
 | `service_id` | Server configuration |
 | `current_time` | Server clock (unix timestamp) |
-| `origin_id` | `hash(request_path)` or server-assigned |
+| `origin_id` | `hash(method + path)` or server-assigned |
 | `facilitator_pubkey` | Server configuration |
 
 **Origin ID normalization (RECOMMENDED):** Servers SHOULD define `origin_id` over a canonical form (method + normalized path template + host) to avoid accidental linkability or bypass via trivial path variations.
@@ -270,21 +403,26 @@ Clients manage `presentation_index`:
 
 ## 11. Verification Flow
 
-Server steps:
+Server steps for requests with `Authorization: ZKSession` header:
 
-1. Parse `Authorization` header for `ZKSession` scheme
-2. If missing → `401` with `WWW-Authenticate: ZKSession`
-3. Extract scheme prefix from proof
-4. If unsupported scheme → `400 unsupported_zk_scheme`
-5. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
-6. Verify proof
-7. If invalid → `401 invalid_zk_proof`
-8. Extract outputs: `(origin_token, tier)`
-9. Check rate limit for `origin_token`
-10. If exceeded → `429 rate_limited`
-11. Check `tier` meets endpoint requirement
-12. If insufficient → `403 tier_insufficient`
-13. Allow request
+1. Parse `Authorization` header for `ZKSession` prefix
+2. Extract scheme and base64-encoded proof
+3. If unsupported scheme → `400 unsupported_zk_scheme`
+4. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
+5. Verify proof locally (no facilitator call needed)
+6. If invalid → `401 invalid_zk_proof`
+7. Extract outputs: `(origin_token, tier)`
+8. Check rate limit for `origin_token`
+9. If exceeded → `429 rate_limited`
+10. Check `tier` meets endpoint requirement
+11. If insufficient → `403 tier_insufficient`
+12. Allow request
+
+Server steps for requests without `Authorization: ZKSession`:
+
+1. Check for `PAYMENT-SIGNATURE` header
+2. If present → process as standard x402 payment (with zk-session credential issuance if extension present)
+3. If absent → return `402` with `PAYMENT-REQUIRED` header (including `extensions.zk_session`)
 
 ---
 
@@ -320,15 +458,30 @@ Encoding details defined in reference implementation.
 |------|------|---------|
 | `unsupported_zk_scheme` | 400 | Scheme not supported |
 | `invalid_zk_proof` | 401 | Proof verification failed |
-| `proof_expired` | 401 | Credential expired |
 | `tier_insufficient` | 403 | Tier below requirement |
 | `rate_limited` | 429 | Origin token rate limited |
 
+### 13.1 Missing or Expired Credentials
 
-Missing credentials:
+When a request has no valid `Authorization: ZKSession` header and no `PAYMENT-SIGNATURE` header, return 402 to trigger re-negotiation:
+
+```
+HTTP/1.1 402 Payment Required
+PAYMENT-REQUIRED: <base64 payload with extensions.zk_session>
+```
+
+This allows clients to obtain a new credential through the standard payment flow.
+
+### 13.2 Invalid ZK Proof
+
 ```
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: ZKSession schemes="pedersen-schnorr-bn254"
+Content-Type: application/json
+
+{
+  "error": "invalid_zk_proof",
+  "message": "ZK proof verification failed"
+}
 ```
 
 ---
@@ -350,11 +503,12 @@ WWW-Authenticate: ZKSession schemes="pedersen-schnorr-bn254"
 - Server verifies "paid + authorized" without learning stable client identifier
 - Repeated requests don't require repeated payment artifacts
 - Different API endpoints see unlinkable tokens
+- Payment identity (Phase 1) is unlinkable to redemption (Phase 2)
 
 ### 14.3 What This Does Not Prevent
 
 - Correlation via IP, TLS fingerprint, timing, cookies
-- Timing correlation at issuance (credential issued immediately after payment links the two)
+- Timing correlation at issuance (credential issued immediately after payment)
 - Credential theft (mitigate with short expiry)
 
 ---
@@ -375,27 +529,50 @@ WWW-Authenticate: ZKSession schemes="pedersen-schnorr-bn254"
 
 | Property | Status | Notes |
 |----------|--------|-------|
-| Payment-credential unlinkability | Partial | Timing correlation possible at issuance |
-| Credential-request unlinkability | ✓ | ZK proof hides credential |
+| Payment-redemption unlinkability | ✓ | Separate requests, ZK proof hides credential |
 | Cross-origin unlinkability | ✓ | Different `origin_id` → different token |
 | Within-origin linkability | Configurable | Client controls via `presentation_index` |
+| Payment-credential timing | Partial | Credential issued with payment response |
 
 **Timing correlation mitigation (RECOMMENDED):**
-- Batch credential requests
-- Delay between payment and credential request
-- Use anonymous network for issuance
+- Delay first redemption request after receiving credential
+- Use different network path for redemption vs payment
+- Batch credential requests if possible
 
 ---
 
 ## 17. Compatibility
 
-- First access remains standard x402
-- Extension is optional, negotiated via `extensions.zk_session`
-- Non-implementing clients/servers remain compatible with base x402
+### 17.1 x402 v2 Compatibility
+
+- Uses x402 v2 header conventions (`PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`)
+- Extension data in `extensions.zk_session` within standard payloads
+- Uses CAIP-2 network identifiers (e.g., `eip155:8453` for Base)
+- Server↔Facilitator communication follows canonical v2 flow
+- Requires facilitator support for zk-session extension
+
+### 17.2 Facilitator Requirements
+
+This extension requires a facilitator that:
+- Accepts `extensions.zk_session.commitment` in settle requests
+- Returns `extensions.zk_session.credential` in settle responses
+- Does not log commitment-to-payment mappings
+
+Standard facilitators that don't support zk-session will process payment normally but not issue credentials.
+
+### 17.3 Backwards Compatibility
+
+- Non-implementing clients ignore `extensions.zk_session` and use standard x402
+- Non-implementing servers ignore `Authorization: ZKSession` and require payment per request
 - Multiple schemes can coexist; client picks from server's `schemes` list
 
+### 17.4 Naming Convention
+
+- Extension ID (string identifier): `zk-session`
+- JSON object key: `zk_session`
+
 **x402 semantics note (normative):**
-- A server MUST continue to use `402 Payment Required` when neither a valid x402 payment nor a valid `Authorization: ZKSession ...` proof is present.
+- A server MUST return `402 Payment Required` when neither a valid `PAYMENT-SIGNATURE` header nor a valid `Authorization: ZKSession` header is present.
 - zk-session changes the *post-payment redemption path* only; it does not redefine what a `402` means.
 
 ---
@@ -404,12 +581,14 @@ WWW-Authenticate: ZKSession schemes="pedersen-schnorr-bn254"
 
 An implementation conforms to this specification if it:
 
-1. Advertises support via `extensions.zk_session` in 402 responses
-2. Issues credentials after valid x402 payment
-3. Verifies proofs per §11
-4. Enforces rate limiting per §10
-5. Returns correct error codes per §13
-6. Supports at least one registered scheme
+1. Advertises support via `extensions.zk_session` in 402 `PAYMENT-REQUIRED` payload
+2. Forwards commitment to facilitator during settlement
+3. Returns credential to client in `PAYMENT-RESPONSE`
+4. Verifies ZK proofs per §11
+5. Enforces rate limiting per §10
+6. Returns correct error codes per §13
+7. Supports at least one registered scheme
+8. Uses x402 v2 conventions for server↔facilitator communication
 
 ---
 
@@ -417,7 +596,7 @@ An implementation conforms to this specification if it:
 
 ```
 Credential {
-  // Signed by issuer
+  // Signed by issuer (facilitator)
   service_id: Field
   tier: Field  
   max_presentations: Field
@@ -437,90 +616,118 @@ Credential {
 ## Appendix B: Example Flow
 
 ```
-# 1. Initial request
+# ═══════════════════════════════════════════════════════════════════
+# PHASE 1: Payment + Credential Issuance
+# ═══════════════════════════════════════════════════════════════════
+
+# 1. Client requests resource
 GET /api/data HTTP/1.1
 Host: api.example.com
 
-# 2. Server responds with 402 + extension
+# 2. Server returns 402 with zk-session extension
 HTTP/1.1 402 Payment Required
-Content-Type: application/json
+PAYMENT-REQUIRED: eyJ4NDAyVmVyc2lvbiI6MiwiYWNjZXB0cyI6W3t9XSwiZXh0ZW5zaW9ucyI6eyJ6a19zZXNzaW9uIjp7InZlcnNpb24iOiIwLjEiLCJzY2hlbWVzIjpbInBlZGVyc2VuLXNjaG5vcnItYm4yNTQiXX19fQ==
 
-{
-  "x402": {
-    "payment_requirements": { 
-      "amount": "100000", 
-      "asset": "USDC",
-      "facilitator": "https://facilitator.example.com/settle"
-    },
-    "extensions": {
-      "zk_session": {
-        "version": "0.1",
-        "schemes": ["pedersen-schnorr-bn254"],
-        "facilitator_pubkey": "pedersen-schnorr-bn254:0x04..."
-      }
-    }
-  }
-}
+# Decoded:
+# {
+#   "x402Version": 2,
+#   "accepts": [{"scheme": "exact", "network": "eip155:8453", ...}],
+#   "extensions": {
+#     "zk_session": {
+#       "version": "0.1",
+#       "schemes": ["pedersen-schnorr-bn254"],
+#       "facilitator_pubkey": "pedersen-schnorr-bn254:0x04..."
+#     }
+#   }
+# }
 
-# 3. Client pays via facilitator with commitment
-POST https://facilitator.example.com/settle HTTP/1.1
-Content-Type: application/json
-
-{
-  "payment": { /* x402 payment */ },
-  "zk_session": {
-    "commitment": "pedersen-schnorr-bn254:0x..."
-  }
-}
-
-# 4. Facilitator settles payment and returns credential
-HTTP/1.1 200 OK
-{
-  "payment_receipt": { /* x402 receipt */ },
-  "zk_session": {
-    "credential": {
-      "scheme": "pedersen-schnorr-bn254",
-      "service_id": "0x...",
-      "tier": 1,
-      "max_presentations": 1000,
-      "issued_at": 1706918400,
-      "expires_at": 1707004800,
-      "commitment": "0x...",
-      "signature": "0x..."
-    }
-  }
-}
-
-# 5. Client generates proof, accesses resource (no payment header needed)
+# 3. Client sends payment with commitment
 GET /api/data HTTP/1.1
 Host: api.example.com
-Authorization: ZKSession pedersen-schnorr-bn254:eyJwcm9vZiI6...
+PAYMENT-SIGNATURE: eyJ4NDAyVmVyc2lvbiI6Miwic2NoZW1lIjoiZXhhY3QiLCJwYXlsb2FkIjp7fSwiZXh0ZW5zaW9ucyI6eyJ6a19zZXNzaW9uIjp7ImNvbW1pdG1lbnQiOiIweDEyMzQifX19
 
-# 6. Server verifies proof, returns data
+# Decoded:
+# {
+#   "x402Version": 2,
+#   "scheme": "exact",
+#   "network": "eip155:8453",
+#   "payload": {"signature": "0x...", "authorization": {...}},
+#   "extensions": {
+#     "zk_session": {
+#       "commitment": "pedersen-schnorr-bn254:0x..."
+#     }
+#   }
+# }
+
+# 4-7. Server → Facilitator: /verify then /settle (with commitment)
+#      Facilitator returns settlement + credential
+
+# 8. Server returns resource + credential
 HTTP/1.1 200 OK
-{ "data": "..." }
+PAYMENT-RESPONSE: eyJzdWNjZXNzIjp0cnVlLCJ0cmFuc2FjdGlvbiI6IjB4Li4uIiwiZXh0ZW5zaW9ucyI6eyJ6a19zZXNzaW9uIjp7ImNyZWRlbnRpYWwiOnt9fX19
+Content-Type: application/json
 
-# 7. Subsequent requests reuse credential (different presentation_index)
+{"data": "first response with payment"}
+
+# Decoded PAYMENT-RESPONSE:
+# {
+#   "success": true,
+#   "transaction": "0x8f3d...",
+#   "network": "eip155:8453",
+#   "extensions": {
+#     "zk_session": {
+#       "credential": {
+#         "scheme": "pedersen-schnorr-bn254",
+#         "service_id": "0xabc123...",
+#         "tier": 1,
+#         "max_presentations": 1000,
+#         "issued_at": 1706918400,
+#         "expires_at": 1707004800,
+#         "commitment": "0x...",
+#         "signature": "0x..."
+#       }
+#     }
+#   }
+# }
+
+# ═══════════════════════════════════════════════════════════════════
+# PHASE 2: Private Redemption (unlinkable to Phase 1)
+# ═══════════════════════════════════════════════════════════════════
+
+# 9. Client generates ZK proof and requests resource
 GET /api/data HTTP/1.1
 Host: api.example.com
-Authorization: ZKSession pedersen-schnorr-bn254:eyJhbm90aGVy...
+Authorization: ZKSession pedersen-schnorr-bn254:eyJwcm9vZiI6Li4ufQ==
+
+# 10. Server verifies proof locally (no facilitator call)
+
+# 11. Server returns resource
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"data": "response via private redemption"}
+
+# 12. Subsequent requests use new presentation_index (unlinkable)
+GET /api/data HTTP/1.1
+Host: api.example.com
+Authorization: ZKSession pedersen-schnorr-bn254:eyJwcm9vZiI6bmV3Li4ufQ==
 ```
 
 ---
 
 ## Appendix C: Rationale
 
+**Two-phase flow for privacy:**
+If credential redemption occurred in the same request as payment, the server would trivially link payment identity to access. Separating payment (Phase 1) from redemption (Phase 2) is what enables unlinkability. This is an intentional deviation from standard x402's single-request-after-payment pattern.
+
 **Facilitator as Issuer:**
-- Client already trusts facilitator for payment settlement
-- No additional trust assumptions or round trips
-- Credential issuance piggybacks on existing payment confirmation
+- Server already trusts facilitator for payment settlement
+- No additional trust assumptions or round trips beyond standard x402
+- Credential issuance piggybacks on existing settlement response
 - Separates issuer (facilitator) from verifier (server) naturally
 
-**Payment-first design:**
-This extension avoids "proof-only access" pitfalls by:
-- Keeping payment as payment (x402 remains about settlement)
-- Treating zk-session as post-payment redemption optimization
-- Remaining compatible with future session payment schemes (escrow, channels)
+**Server mediates facilitator communication:**
+Following x402 v2 conventions, the client never contacts the facilitator directly. This keeps the architecture clean and ensures servers control their payment flow.
 
 **Deterministic origin tokens:**
 The deterministic `origin_token` approach (vs. challenge-based nullifiers) was chosen for:
@@ -528,3 +735,45 @@ The deterministic `origin_token` approach (vs. challenge-based nullifiers) was c
 - Client-controlled privacy/linkability tradeoff
 - Simpler server implementation
 - Natural fit with per-origin rate limiting
+
+**Authorization header vs PAYMENT-SIGNATURE:**
+ZK proofs use `Authorization: ZKSession` instead of `PAYMENT-SIGNATURE` because:
+- ZK proofs are redemption tokens, not payment payloads
+- Allows servers to distinguish payment from redemption
+- Redemption doesn't require facilitator involvement
+
+---
+
+## Appendix D: x402 v2 Alignment Summary
+
+| x402 v2 Feature | zk-session Alignment |
+|-----------------|---------------------|
+| `PAYMENT-REQUIRED` header | ✓ Extension in `extensions.zk_session` |
+| `PAYMENT-SIGNATURE` header | ✓ Commitment in `extensions.zk_session` |
+| `PAYMENT-RESPONSE` header | ✓ Credential in `extensions.zk_session` |
+| Server↔Facilitator flow | ✓ Server calls /verify, /settle |
+| Client↔Server only | ✓ Client never contacts facilitator |
+| Base64-encoded payloads | ✓ Standard encoding |
+| `x402Version: 2` | ✓ Used in all payloads |
+| CAIP-2 network identifiers | ✓ Used (e.g., `eip155:8453`) |
+| Facilitator `/settle` request | Extended with `extensions.zk_session` |
+| Facilitator `/settle` response | Extended with credential |
+
+**Intentional deviations:**
+- Redemption uses `Authorization` header, not `PAYMENT-SIGNATURE`
+- Redemption is a separate request (for privacy), not same-request
+- Redemption does not involve facilitator (proof verified locally)
+
+## Compatibility notes (tweaks)
+
+**Client request count:** This extension intentionally introduces an additional server round-trip compared to the minimal x402 retry pattern. A typical sequence is: (1) initial request → 402, (2) retry with PAYMENT-SIGNATURE → server settles and issues a blinded credential, (3) subsequent authorized request(s) using the issued credential. This extra phase is the privacy boundary that prevents linking payment to later request activity.
+
+
+## Transport sizing
+
+**Transport sizing:** Implementations SHOULD keep `PAYMENT-RESPONSE` small to avoid HTTP header field size limits. If the issued credential material is large (e.g., includes proofs or bulky metadata), the server MAY return the credential in the response body as JSON (e.g., `{ "zk_session": { ... } }`) and include only the standard x402 receipt fields in `PAYMENT-RESPONSE`, along with a flag such as `"zk_session_in_body": true` (or an equivalent extension signal). Clients MUST support the body-based fallback when advertised.
+
+
+## Extensions processing
+
+**Forward compatibility:** Servers, clients, and facilitators MUST ignore unknown fields under an `extensions` object. Unknown extensions MUST NOT cause parsing failures for otherwise-valid x402 v2 messages.
