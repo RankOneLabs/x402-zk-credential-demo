@@ -323,7 +323,7 @@ Encoding details defined in reference implementation.
 | `proof_expired` | 401 | Credential expired |
 | `tier_insufficient` | 403 | Tier below requirement |
 | `rate_limited` | 429 | Origin token rate limited |
-| `presentations_exhausted` | 429 | max_presentations reached |
+
 
 Missing credentials:
 ```

@@ -166,8 +166,7 @@ export type ZKSessionErrorCode =
   | 'invalid_zk_proof'        // 401
   | 'proof_expired'           // 401
   | 'tier_insufficient'       // 403
-  | 'rate_limited'            // 429
-  | 'presentations_exhausted'; // 429
+  | 'rate_limited';           // 429
 
 /** Error response body */
 export interface ZKSessionError {
@@ -182,7 +181,6 @@ export const ERROR_CODE_TO_STATUS: Record<ZKSessionErrorCode, number> = {
   proof_expired: 401,
   tier_insufficient: 403,
   rate_limited: 429,
-  presentations_exhausted: 429,
 };
 
 // =============================================================================
