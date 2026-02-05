@@ -457,8 +457,6 @@ const result = await evmScheme.settle(paymentPayload, requirements);
 
 Supported chains: Base Sepolia (84532), with Anvil fork for local development.
 
-Supported chains: Base Sepolia (84532), with Anvil fork for local development.
-
 ---
 
 ## End-to-End Test
