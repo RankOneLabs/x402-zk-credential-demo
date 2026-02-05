@@ -10,7 +10,7 @@ import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CredentialIssuer, type IssuerConfig } from './issuer.js';
-import type { IssuanceRequest, SettlementRequest } from './types.js';
+import type { SettlementRequest } from './types.js';
 import { parseSchemePrefix, addSchemePrefix } from '@demo/crypto';
 
 export interface FacilitatorServerConfig extends IssuerConfig {
@@ -53,6 +53,7 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
   });
 
   // Settlement endpoint (spec §7.2, §7.3)
+  // x402 v2 format with signed payment payload
   app.post('/settle', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const request = req.body as SettlementRequest;
@@ -64,7 +65,12 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
       }
 
       if (!request.payment) {
-        res.status(400).json({ error: 'Missing payment' });
+        res.status(400).json({ error: 'Missing payment (x402 v2 PaymentPayload)' });
+        return;
+      }
+
+      if (!request.paymentRequirements) {
+        res.status(400).json({ error: 'Missing paymentRequirements' });
         return;
       }
 
@@ -87,34 +93,13 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
     }
   });
 
-  // Legacy endpoint (deprecated, for backward compatibility)
-  app.post('/credentials/issue', async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const request = req.body as IssuanceRequest;
-
-      // Validate request
-      if (!request.userCommitment?.x || !request.userCommitment?.y) {
-        res.status(400).json({ error: 'Missing userCommitment' });
-        return;
-      }
-
-      if (!request.paymentProof) {
-        res.status(400).json({ error: 'Missing paymentProof' });
-        return;
-      }
-
-      const response = await facilitator.issueCredential(request);
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  });
-
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[Facilitator] Error:', err.message);
     res.status(500).json({ error: err.message });
   });
+
+  let httpServer: ReturnType<typeof app.listen> | null = null;
 
   return {
     app,
@@ -122,7 +107,7 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
       return new Promise<void>((resolve, reject) => {
         facilitator.initialize()
           .then(() => {
-            app.listen(config.port, () => {
+            httpServer = app.listen(config.port, () => {
               console.log(`[Facilitator] Server running on port ${config.port}`);
               console.log(`[Facilitator] Service ID: ${config.serviceId}`);
               console.log(`[Facilitator] Mock payments: ${config.allowMockPayments ? 'enabled' : 'disabled'}`);
@@ -133,6 +118,19 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
             console.error('[Facilitator] Failed to initialize:', err.message);
             reject(err);
           });
+      });
+    },
+    stop: () => {
+      return new Promise<void>((resolve, reject) => {
+        if (!httpServer) {
+          resolve();
+          return;
+        }
+        httpServer.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+        httpServer = null;
       });
     },
   };

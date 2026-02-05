@@ -130,9 +130,12 @@ export interface X402PaymentRequirements {
 
 /** Payment request to facilitator with zk_session commitment (spec §7.2) */
 export interface X402PaymentRequest {
+  x402Version: 2;
   payment: unknown; // x402 payment proof (opaque to zk-session layer)
-  zk_session: {
-    commitment: string; // scheme-prefixed: "pedersen-schnorr-bn254:0x..."
+  extensions: {
+    zk_session: {
+      commitment: string; // scheme-prefixed: "pedersen-schnorr-bn254:0x..."
+    };
   };
 }
 
@@ -150,9 +153,12 @@ export interface CredentialWireFormat {
 
 /** Payment response from facilitator (spec §7.3) */
 export interface X402PaymentResponse {
+  x402Version: 2;
   payment_receipt: unknown; // x402 receipt (opaque to zk-session layer)
-  zk_session: {
-    credential: CredentialWireFormat;
+  extensions: {
+    zk_session: {
+      credential: CredentialWireFormat;
+    };
   };
 }
 

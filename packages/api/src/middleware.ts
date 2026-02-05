@@ -17,9 +17,9 @@
  */
 
 import type { Request, Response, NextFunction } from 'express';
-import { 
-  stringToField, 
-  bigIntToHex, 
+import {
+  stringToField,
+  bigIntToHex,
   addSchemePrefix,
   type Point,
   type X402WithZKSessionResponse,
@@ -122,7 +122,7 @@ export class ZkSessionMiddleware {
           network: (this.config.network ?? 'eip155:84532') as `${string}:${string}`,
           asset: this.config.paymentAsset ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia USDC
           amount: this.config.paymentAmount ?? '100000',
-          payTo: this.config.paymentRecipient ?? this.config.facilitatorUrl,
+          payTo: this.config.paymentRecipient ?? this.config.facilitatorUrl, // In v2 managed mode, payTo might be server or facilitator
           maxTimeoutSeconds: 300,
           extra: {},
         },
@@ -161,17 +161,87 @@ export class ZkSessionMiddleware {
    */
   middleware() {
     return async (req: Request, res: Response, next: NextFunction) => {
+      // 0. Handle Payment Settlement (Mediated Flow)
+      const paymentSig = req.get('PAYMENT-SIGNATURE');
+      if (paymentSig) {
+        try {
+          console.log('[ZkSession] Processing payment signature...');
+          const payloadStr = Buffer.from(paymentSig, 'base64').toString('utf-8');
+          const payload = JSON.parse(payloadStr);
+
+          // Call Facilitator /settle
+          // Map client's X402PaymentRequest to Facilitator's SettlementRequest
+          const settleReq = {
+            paymentPayload: payload.payment,
+            paymentRequirements: {
+              amount: this.config.paymentAmount ?? '100000',
+              asset: this.config.paymentAsset ?? 'USDC',
+              network: this.config.network ?? 'eip155:84532',
+              facilitator: this.config.facilitatorUrl,
+            },
+            extensions: payload.extensions,
+          };
+
+          const settleResp = await fetch(this.config.facilitatorUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settleReq),
+          });
+
+          if (!settleResp.ok) {
+            const errBody = await settleResp.text();
+            throw new Error(`Facilitator error ${settleResp.status}: ${errBody}`);
+          }
+
+          const settleData = await settleResp.json() as any;
+
+          if (!settleData.success) {
+            throw new Error('Settlement failed (success=false)');
+          }
+
+          // Construct X402PaymentResponse
+          const clientResp = {
+            x402Version: 2,
+            payment_receipt: {
+              success: true,
+              transaction: settleData.transaction,
+              network: settleData.network,
+              payer: settleData.payer,
+            },
+            extensions: settleData.extensions,
+          };
+
+          res.set('PAYMENT-RESPONSE', Buffer.from(JSON.stringify(clientResp)).toString('base64'));
+
+          // Grant access for this request
+          const cred = settleData.extensions.zk_session.credential;
+          req.zkSession = {
+            tier: cred.tier,
+            originToken: 'payment-session', // Placeholder for payment-based session
+          };
+
+          console.log('[ZkSession] Payment settled, credential issued. Granting access.');
+          next();
+          return;
+
+        } catch (error) {
+          console.error('[ZkSession] Payment processing failed:', error);
+          // Fall through to normal verification (which will likely return 402)
+        }
+      }
+
       const result = await this.verifyRequest(req);
 
       if (!result.valid) {
-        const status = ERROR_CODE_TO_STATUS[result.errorCode];
-
-        // 402: Payment Required - return x402 extension format (spec §6)
-        if (status === 402 || result.errorCode === 'invalid_zk_proof' && !req.headers.authorization) {
+        // 402: Payment Required when no credentials provided (spec §6)
+        // Prompts client to discover payment requirements and obtain credentials
+        if (!req.headers.authorization) {
           const resourceUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
           res.status(402).json(this.build402Response(resourceUrl));
           return;
         }
+
+        const status = ERROR_CODE_TO_STATUS[result.errorCode];
 
         // 401: Add WWW-Authenticate header (spec §13)
         if (status === 401) {
@@ -274,12 +344,12 @@ export class ZkSessionMiddleware {
       // Layout: [service_id, current_time, origin_id, issuer_pubkey_x, issuer_pubkey_y, origin_token, tier]
       const tier = proofData.publicInputs[6] ? Number(BigInt(proofData.publicInputs[6])) : 0;
       const originToken = proofData.publicInputs[5] ?? '0x0';
-      
+
       // Still check minimum tier requirement even in skip mode
       if (tier < (this.config.minTier ?? 0)) {
         return { valid: false, errorCode: 'tier_insufficient', message: `Tier ${tier} below minimum ${this.config.minTier}` };
       }
-      
+
       return { valid: true, tier, originToken };
     }
 

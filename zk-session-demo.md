@@ -764,16 +764,46 @@ ZK proofs use `Authorization: ZKSession` instead of `PAYMENT-SIGNATURE` because:
 - Redemption is a separate request (for privacy), not same-request
 - Redemption does not involve facilitator (proof verified locally)
 
-## Compatibility notes (tweaks)
 
-**Client request count:** This extension intentionally introduces an additional server round-trip compared to the minimal x402 retry pattern. A typical sequence is: (1) initial request → 402, (2) retry with PAYMENT-SIGNATURE → server settles and issues a blinded credential, (3) subsequent authorized request(s) using the issued credential. This extra phase is the privacy boundary that prevents linking payment to later request activity.
+## Transport and size limits
 
+Some proof systems and credential formats can easily exceed common HTTP header field limits. This has already been observed in practice with UltraHonk-style proofs on the order of ~15KB, which can trigger failures in typical reverse proxies and servers when carried in headers.
 
-## Transport sizing
+**Normative guidance:**
 
-**Transport sizing:** Implementations SHOULD keep `PAYMENT-RESPONSE` small to avoid HTTP header field size limits. If the issued credential material is large (e.g., includes proofs or bulky metadata), the server MAY return the credential in the response body as JSON (e.g., `{ "zk_session": { ... } }`) and include only the standard x402 receipt fields in `PAYMENT-RESPONSE`, along with a flag such as `"zk_session_in_body": true` (or an equivalent extension signal). Clients MUST support the body-based fallback when advertised.
+1. **Do not assume headers can carry proofs.** Implementations MUST NOT require clients to place full proofs in HTTP headers.
+2. **Prefer response bodies for large artifacts.** If issuance returns large credential material (e.g., proof blobs, verification key hashes, transcripts), the server SHOULD return that material in the **response body** as JSON and keep `PAYMENT-RESPONSE` header content minimal (receipt-oriented).
+3. **Body fallback is required.** Clients implementing this extension MUST support a body-based transport for:
+   - issued credential material returned after settlement, and
+   - authorization proofs presented to protected endpoints.
+4. **Small header, big body pattern.**
+   - Headers MAY be used for small routing / signaling fields only (e.g., extension id, version, or a short handle).
+   - Large blobs MUST be placed in the request/response body.
 
+### Recommended envelope for body transport
 
-## Extensions processing
+When returning an issued credential after settlement, the server SHOULD use:
 
-**Forward compatibility:** Servers, clients, and facilitators MUST ignore unknown fields under an `extensions` object. Unknown extensions MUST NOT cause parsing failures for otherwise-valid x402 v2 messages.
+```json
+{
+  "x402": {
+    "payment_response": { /* decoded PAYMENT-RESPONSE receipt fields */ }
+  },
+  "zk_session": {
+    "credential": { /* issued credential material */ }
+  }
+}
+```
+
+When presenting authorization to a protected endpoint, clients SHOULD use:
+
+```json
+{
+  "zk_session": {
+    "authorization": { /* proof / signature / metadata */ }
+  }
+}
+```
+
+Servers MAY still accept `Authorization: ZKSession <base64url(JSON)>` for small authorizations, but MUST support the JSON body form above.
+

@@ -8,26 +8,22 @@ import type {
   X402PaymentResponse,
   CredentialWireFormat,
   ZKSessionScheme,
+  PaymentPayload,
+  PaymentRequirements,
 } from '@demo/crypto';
 
 // Re-export for convenience
-export type { X402PaymentRequest, X402PaymentResponse, CredentialWireFormat };
+export type { X402PaymentRequest, X402PaymentResponse, CredentialWireFormat, PaymentPayload, PaymentRequirements };
 
 /** 
  * Settlement request (spec §7.2)
- * Maps to X402PaymentRequest
+ * x402 v2 format with signed payment payload
  */
 export interface SettlementRequest {
-  /** x402 payment proof */
-  payment: {
-    txHash?: string;
-    facilitatorReceipt?: string;
-    /** For demo: allow mock payments */
-    mock?: {
-      amountUSDC: number;
-      payer: string;
-    };
-  };
+  /** x402 v2 payment payload with EIP-3009 authorization */
+  payment: PaymentPayload;
+  /** Payment requirements from the 402 response */
+  paymentRequirements: PaymentRequirements;
   /** ZK session extension with scheme-prefixed commitment */
   zk_session: {
     /** Scheme-prefixed commitment: "pedersen-schnorr-bn254:0x..." */

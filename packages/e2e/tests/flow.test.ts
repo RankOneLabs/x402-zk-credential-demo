@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, ChildProcess } from 'child_process';
-import { createPublicClient, createWalletClient, http, defineChain, parseEther, parseUnits } from 'viem';
+import { createPublicClient, createWalletClient, http, defineChain, parseEther, parseUnits, keccak256, encodePacked, toHex, hexToBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createApiServer, ZkSessionMiddleware } from '@demo/api';
 import { ZkSessionClient } from '@demo/cli';
 import { createFacilitatorServer } from '@demo/facilitator';
-import { hexToBigInt, parseSchemePrefix, type X402WithZKSessionResponse } from '@demo/crypto';
+import { hexToBigInt, parseSchemePrefix, type X402WithZKSessionResponse, type PaymentPayload, type PaymentRequirements } from '@demo/crypto';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -61,12 +62,32 @@ describe('End-to-End Flow', () => {
     });
 
     // Cleanup
-    afterAll(() => {
+    afterAll(async () => {
+        // Stop servers first (with error handling for servers that may not have started)
+        if (apiServer) {
+            try {
+                await apiServer.stop();
+            } catch {
+                // Server may not have started
+            }
+        }
+        if (facilitatorServer) {
+            try {
+                await facilitatorServer.stop();
+            } catch {
+                // Server may not have started
+            }
+        }
+        // Then kill Anvil
         if (anvilProcess) {
-            if (process.platform !== 'win32' && anvilProcess.pid !== undefined) {
-                process.kill(-anvilProcess.pid); // Kill process group on POSIX
-            } else {
-                anvilProcess.kill(); // Fallback for Windows or missing PID
+            try {
+                if (process.platform !== 'win32' && anvilProcess.pid !== undefined) {
+                    process.kill(-anvilProcess.pid); // Kill process group on POSIX
+                } else {
+                    anvilProcess.kill(); // Fallback for Windows or missing PID
+                }
+            } catch {
+                // Process may already be dead
             }
         }
     });
@@ -123,12 +144,12 @@ describe('End-to-End Flow', () => {
             tiers: [
                 { minAmountCents: 10, tier: 1, maxPresentations: 10, durationSeconds: 3600 }
             ],
-            paymentVerification: {
+            evmPayment: {
                 chainId: 31337,
                 rpcUrl: ANVIL_RPC,
-                recipientAddress: facilitatorAddress,
+                facilitatorPrivateKey: ANVIL_PK_0 as `0x${string}`,
+                usdcAddress,
                 usdcDecimals: 6,
-                usdcAddress, // PASS THE DEPLOYED ADDRESS
             },
             allowMockPayments: false,
         });
@@ -166,7 +187,9 @@ describe('End-to-End Flow', () => {
                 skipProofVerification: SKIP_PROOF_VERIFICATION,
                 facilitatorUrl: `http://localhost:${ISSUER_PORT}/settle`,
                 paymentAmount: '100000',
-                paymentAsset: 'USDC',
+                paymentAsset: usdcAddress, // Use deployed contract address
+                paymentRecipient: facilitatorAddress,
+                network: 'eip155:31337', // Anvil chain ID
             }
         });
 
@@ -174,7 +197,7 @@ describe('End-to-End Flow', () => {
         await apiServer.start();
     });
 
-    it('should execute full flow: Discovery -> Mint -> Pay -> Settle -> Verify', async () => {
+    it('should execute full flow: Discovery -> Mint -> Sign Authorization -> Settle -> Verify', async () => {
         // 0. Discovery Phase: Try to access protected resource unauthenticated
         console.log('Attempting unauthenticated access (Discovery)...');
         const discoveryResponse = await fetch(`http://localhost:${API_PORT}/api/whoami`);
@@ -188,7 +211,7 @@ describe('End-to-End Flow', () => {
         expect(discoveryData.accepts).toBeDefined();
         expect(discoveryData.accepts.length).toBeGreaterThan(0);
         expect(discoveryData.accepts[0].scheme).toBe('exact');
-        expect(discoveryData.accepts[0].asset).toBe('USDC');
+        expect(discoveryData.accepts[0].asset).toBe(usdcAddress);
         
         // Verify zk_session extension
         expect(discoveryData.extensions?.zk_session).toBeDefined();
@@ -197,68 +220,135 @@ describe('End-to-End Flow', () => {
 
         // Parse facilitator URL and payment details from 402 response
         const zkSession = discoveryData.extensions!.zk_session!;
-        const payment = discoveryData.accepts[0];
-        const facilitatorUrl = zkSession.facilitator_url || payment.payTo;
-        const requiredAmount = BigInt(payment.amount);
+        const paymentReqs = discoveryData.accepts[0];
+        const facilitatorUrl = zkSession.facilitator_url || `http://localhost:${ISSUER_PORT}/settle`;
+        const requiredAmount = BigInt(paymentReqs.amount);
 
         // 1. Mint USDC to User
-        // ABI for mint(address, uint256)
         const mintAbi = [{
             name: 'mint',
             type: 'function',
             stateMutability: 'nonpayable',
             inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }],
             outputs: []
-        }];
+        }] as const;
 
         const amount = 2_000_000n; // 2 USDC
         const deployerAccount = privateKeyToAccount(ANVIL_PK_0);
+        const deployerWalletClient = createWalletClient({ 
+            chain: anvilChain, 
+            transport: http(ANVIL_RPC), 
+            account: deployerAccount 
+        });
 
         console.log('Minting USDC to user...');
-        const { request: mintRequest } = await publicClient.simulateContract({
-            account: deployerAccount, // Pass Account object, not PK string
+        const mintTxHash = await deployerWalletClient.writeContract({
             address: usdcAddress,
             abi: mintAbi,
             functionName: 'mint',
             args: [userAccount.address, amount]
         });
-        await walletClient.writeContract(mintRequest);
+        // Wait for mint to be confirmed
+        await publicClient.waitForTransactionReceipt({ hash: mintTxHash });
+        console.log('Minted USDC, tx:', mintTxHash.slice(0, 16) + '...');
 
-        // 2. User transfers USDC to Facilitator
-        // ERC20 Transfer ABI
-        const transferAbi = [{
-            name: 'transfer',
-            type: 'function',
-            stateMutability: 'nonpayable',
-            inputs: [{ name: 'to', type: 'address' }, { name: 'value', type: 'uint256' }],
-            outputs: [{ name: '', type: 'bool' }]
-        }];
+        // 2. Create EIP-3009 signed authorization (x402 v2 flow)
+        // User signs authorization for facilitator to pull funds
+        console.log('Creating EIP-3009 signed authorization...');
+        
+        const validAfter = 0n; // Valid immediately
+        const validBefore = BigInt(Math.floor(Date.now() / 1000) + 3600); // Valid for 1 hour
+        const nonce = keccak256(encodePacked(['address', 'uint256'], [userAccount.address, BigInt(Date.now())]));
 
-        console.log('Transferring USDC to facilitator...');
-        // We need the hash for the proof
-        const hash = await walletClient.writeContract({
-            address: usdcAddress,
-            abi: transferAbi,
-            functionName: 'transfer',
-            args: [facilitatorAddress, requiredAmount], // Pay the discovered amount
-            account: userAccount
+        // EIP-712 domain for USDC
+        const domain = {
+            name: 'USD Coin',
+            version: '1',
+            chainId: 31337,
+            verifyingContract: usdcAddress,
+        } as const;
+
+        // EIP-3009 TransferWithAuthorization type
+        const types = {
+            TransferWithAuthorization: [
+                { name: 'from', type: 'address' },
+                { name: 'to', type: 'address' },
+                { name: 'value', type: 'uint256' },
+                { name: 'validAfter', type: 'uint256' },
+                { name: 'validBefore', type: 'uint256' },
+                { name: 'nonce', type: 'bytes32' },
+            ],
+        } as const;
+
+        const message = {
+            from: userAccount.address,
+            to: facilitatorAddress,
+            value: requiredAmount,
+            validAfter,
+            validBefore,
+            nonce,
+        };
+
+        // Sign the authorization
+        const signature = await walletClient.signTypedData({
+            domain,
+            types,
+            primaryType: 'TransferWithAuthorization',
+            message,
         });
 
-        console.log(`Payment TX: ${hash}`);
+        console.log(`EIP-3009 Authorization signed: ${signature.slice(0, 20)}...`);
 
-        // Wait for confirmation
-        await publicClient.waitForTransactionReceipt({ hash });
+        // 3. Build x402 v2 PaymentPayload
+        // @x402/evm exact scheme expects: payload.authorization + payload.signature
+        const paymentPayload: PaymentPayload = {
+            x402Version: 2,
+            resource: discoveryData.resource,
+            accepted: paymentReqs,
+            payload: {
+                authorization: {
+                    from: userAccount.address,
+                    to: facilitatorAddress,
+                    value: requiredAmount.toString(),
+                    validAfter: validAfter.toString(),
+                    validBefore: validBefore.toString(),
+                    nonce,
+                },
+                signature,
+            },
+        };
 
-        // 3. Settle and obtain credential via Client (spec §7.2, §7.3)
+        // Build PaymentRequirements from the 402 response
+        // @x402/evm requires extra.name and extra.version for EIP-712 domain
+        const paymentRequirements: PaymentRequirements = {
+            scheme: paymentReqs.scheme,
+            network: paymentReqs.network,
+            asset: paymentReqs.asset,
+            amount: paymentReqs.amount,
+            payTo: paymentReqs.payTo,
+            maxTimeoutSeconds: paymentReqs.maxTimeoutSeconds,
+            extra: {
+                ...paymentReqs.extra,
+                // EIP-712 domain info for USDC (required by @x402/evm)
+                name: 'USD Coin',
+                version: '1',
+            },
+        };
+
+        // 4. Settle and obtain credential via Client (spec §7.2, §7.3)
         console.log('Settling payment and obtaining credential...');
+        // Use temp storage to avoid conflicts with previous test runs
+        const tempStoragePath = path.join(os.tmpdir(), `zk-session-test-${Date.now()}`, 'credentials.json');
         const client = new ZkSessionClient({
             strategy: 'time-bucketed',
             timeBucketSeconds: 60,
+            storagePath: tempStoragePath,
         });
 
         const storedCredential = await client.settleAndObtainCredential(
             facilitatorUrl,
-            { txHash: hash }
+            paymentPayload,
+            paymentRequirements
         );
 
         expect(storedCredential).toBeDefined();
@@ -269,7 +359,7 @@ describe('End-to-End Flow', () => {
             maxPresentations: storedCredential.maxPresentations,
         });
 
-        // 4. Access Protected API with Authorization: ZKSession header
+        // 5. Access Protected API with Authorization: ZKSession header
         console.log('Accessing protected API with ZK proof...');
         const response = await client.makeAuthenticatedRequest(
             `http://localhost:${API_PORT}/api/whoami`,

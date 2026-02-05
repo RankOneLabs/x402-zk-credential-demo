@@ -15,8 +15,33 @@ import {
   addSchemePrefix,
   parseSchemePrefix,
   type X402WithZKSessionResponse,
+  type X402PaymentRequest,
+  type X402PaymentResponse,
   type CredentialWireFormat,
+  type PaymentPayload,
+  type PaymentRequirements,
 } from '@demo/crypto';
+
+/** Settlement request for x402 v2 */
+interface SettlementRequest {
+  payment: PaymentPayload;
+  paymentRequirements: PaymentRequirements;
+  zk_session: {
+    commitment: string;
+  };
+}
+
+/** Settlement response from facilitator */
+interface SettlementResponse {
+  payment_receipt: {
+    status: 'settled';
+    txHash?: string;
+    amountUSDC: number;
+  };
+  zk_session: {
+    credential: CredentialWireFormat;
+  };
+}
 import { Noir } from '@noir-lang/noir_js';
 import { UltraHonkBackend } from '@aztec/bb.js';
 import { CompiledCircuit } from '@noir-lang/types';
@@ -61,7 +86,7 @@ export class ZkSessionClient {
   private readonly storage: CredentialStorage;
   private readonly proofCache: ProofCache;
   private readonly originIndices: Map<string, number> = new Map();
-  
+
   // Cache facilitator pubkey from 402 response
   private facilitatorPubkeyCache: Map<string, { x: string; y: string }> = new Map();
 
@@ -82,13 +107,13 @@ export class ZkSessionClient {
     }
 
     const zkSession = body.extensions.zk_session;
-    
+
     // Get first payment option from accepts array
     if (!body.accepts || body.accepts.length === 0) {
       throw new Error('Response does not contain any payment options');
     }
     const payment = body.accepts[0];
-    
+
     // Parse scheme-prefixed facilitator pubkey
     const { scheme, value: pubkeyHex } = parseSchemePrefix(zkSession.facilitator_pubkey);
     if (scheme !== 'pedersen-schnorr-bn254') {
@@ -122,7 +147,7 @@ export class ZkSessionClient {
    */
   async discover(url: string): Promise<Parsed402Response> {
     const response = await fetch(url, { method: 'GET' });
-    
+
     if (response.status !== 402) {
       throw new Error(`Expected 402 response, got ${response.status}`);
     }
@@ -144,15 +169,18 @@ export class ZkSessionClient {
   }
 
   /**
-   * Obtain a credential by settling payment with facilitator (spec §7.2, §7.3)
+   * Generate a payment request with ZK session commitment (spec §7.2)
+   * Client generates secrets locally and computes commitment
    */
-  async settleAndObtainCredential(
-    facilitatorUrl: string,
-    paymentProof: {
-      mock?: { amountUSDC: number; payer: string };
-      txHash?: string;
-    }
-  ): Promise<StoredCredential> {
+  async generatePaymentRequest(
+    paymentProof: unknown
+  ): Promise<{
+    request: X402PaymentRequest;
+    secrets: {
+      nullifierSeed: bigint;
+      blindingFactor: bigint;
+    };
+  }> {
     // Generate secrets locally (never sent to facilitator)
     const nullifierSeed = randomFieldElement();
     const blindingFactor = randomFieldElement();
@@ -167,36 +195,48 @@ export class ZkSessionClient {
       commitment.point.y.toString(16).padStart(64, '0');
     const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-bn254', commitmentHex);
 
-    // Settlement request to facilitator (spec §7.2)
-    const response = await fetch(facilitatorUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    return {
+      request: {
+        x402Version: 2,
         payment: paymentProof,
-        zk_session: {
-          commitment: commitmentPrefixed,
+        extensions: {
+          zk_session: {
+            commitment: commitmentPrefixed,
+          },
         },
-      }),
-    });
+      },
+      secrets: {
+        nullifierSeed,
+        blindingFactor,
+      },
+    };
+  }
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: response.statusText })) as { error: string };
-      throw new Error(`Settlement failed: ${error.error}`);
+  /**
+   * Handle payment response and extract credential (spec §7.3)
+   */
+  async handlePaymentResponse(
+    response: X402PaymentResponse,
+    secrets: { nullifierSeed: bigint; blindingFactor: bigint },
+    facilitatorUrl: string
+  ): Promise<StoredCredential> {
+    if (!response.extensions?.zk_session?.credential) {
+      throw new Error('Payment response missing zk_session credential');
     }
 
-    // Parse settlement response (spec §7.3)
-    const data = await response.json() as {
-      payment_receipt: { status: string; amountUSDC: number };
-      zk_session: { credential: CredentialWireFormat };
-    };
-
-    const { credential } = data.zk_session;
+    const { credential } = response.extensions.zk_session;
 
     // Parse credential wire format into stored format
-    const stored = this.parseCredentialWireFormat(credential, nullifierSeed, blindingFactor, facilitatorUrl);
-    this.storage.set(stored);
+    const stored = this.parseCredentialWireFormat(
+      credential,
+      secrets.nullifierSeed,
+      secrets.blindingFactor,
+      facilitatorUrl
+    );
 
+    this.storage.set(stored);
     console.log(`[Client] Credential obtained: tier=${credential.tier}, max_presentations=${credential.max_presentations}`);
+
     return stored;
   }
 
@@ -252,55 +292,74 @@ export class ZkSessionClient {
   }
 
   /**
-   * Obtain a credential from an issuer
-   * @deprecated Use settleAndObtainCredential for spec-compliant API
+   * Settle payment and obtain credential using x402 v2 signed payload (spec §7.2, §7.3)
+   * 
+   * This method:
+   * 1. Generates secrets and commitment locally
+   * 2. Creates EIP-3009 signed payment authorization
+   * 3. Sends to facilitator for settlement
+   * 4. Stores and returns the credential
+   * 
+   * @param facilitatorUrl - URL of the facilitator's /settle endpoint
+   * @param paymentPayload - x402 v2 PaymentPayload with signed EIP-3009 authorization
+   * @param paymentRequirements - Payment requirements from the 402 response
    */
-  async obtainCredential(
-    issuerUrl: string,
-    paymentProof: {
-      mock?: { amountUSDC: number; payer: string };
-      txHash?: string;
-    }
+  async settleAndObtainCredential(
+    facilitatorUrl: string,
+    paymentPayload: PaymentPayload,
+    paymentRequirements: PaymentRequirements
   ): Promise<StoredCredential> {
-    // Generate secrets
+    // Generate secrets locally (never sent to facilitator)
     const nullifierSeed = randomFieldElement();
     const blindingFactor = randomFieldElement();
 
-    // Compute commitment (async - uses Barretenberg)
+    // Compute commitment
     const commitment = await pedersenCommit(nullifierSeed, blindingFactor);
+    const commitmentHex = '0x04' +
+      commitment.point.x.toString(16).padStart(64, '0') +
+      commitment.point.y.toString(16).padStart(64, '0');
+    const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-bn254', commitmentHex);
 
-    // Request credential from issuer
-    const response = await fetch(`${issuerUrl}/credentials/issue`, {
+    // Build x402 v2 settlement request
+    const request: SettlementRequest = {
+      payment: paymentPayload,
+      paymentRequirements,
+      zk_session: {
+        commitment: commitmentPrefixed,
+      },
+    };
+
+    // Send to facilitator
+    const response = await fetch(facilitatorUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        paymentProof,
-        userCommitment: {
-          x: bigIntToHex(commitment.point.x),
-          y: bigIntToHex(commitment.point.y),
-        },
-      }),
+      body: JSON.stringify(request),
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: response.statusText })) as { error: string };
-      throw new Error(`Failed to obtain credential: ${error.error}`);
+      const error = await response.json().catch(() => ({ error: 'Unknown error' })) as { error?: string };
+      throw new Error(`Settlement failed: ${error.error || response.statusText}`);
     }
 
-    const data = await response.json() as { credential: any };
-    const { credential } = data;
+    const data = await response.json() as SettlementResponse;
+    
+    // Extract credential from response
+    const credential = data.zk_session?.credential;
+    if (!credential) {
+      throw new Error('Settlement response missing zk_session.credential');
+    }
 
-    // Store with secrets
-    const stored: StoredCredential = {
-      ...credential,
-      nullifierSeed: bigIntToHex(nullifierSeed),
-      blindingFactor: bigIntToHex(blindingFactor),
-      presentationCount: 0,
-      obtainedAt: Date.now(),
-      issuerUrl,
-    };
+    // Parse and store credential
+    const stored = this.parseCredentialWireFormat(
+      credential,
+      nullifierSeed,
+      blindingFactor,
+      facilitatorUrl
+    );
 
     this.storage.set(stored);
+    console.log(`[Client] Credential obtained: tier=${credential.tier}, max_presentations=${credential.max_presentations}`);
+
     return stored;
   }
 
@@ -312,7 +371,7 @@ export class ZkSessionClient {
    */
   async makeAuthenticatedRequest(
     url: string,
-    options: RequestInit & { 
+    options: RequestInit & {
       forceUnlinkable?: boolean;
       issuerPubkey?: { x: string; y: string };  // Required for proof generation
     } = {}
@@ -448,10 +507,6 @@ export class ZkSessionClient {
     };
 
     try {
-      console.log('[Client] Issuer Pubkey:', credential.issuerPubkey);
-      console.log('[Client] User Commitment:', credential.userCommitment);
-      console.log('[Client] Signature:', credential.signature);
-
       console.log('[Client] Generating witness with Noir...');
       const { witness } = await noir.execute(input);
 

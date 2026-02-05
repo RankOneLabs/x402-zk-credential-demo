@@ -1,7 +1,7 @@
 /**
  * Credential Facilitator
  * 
- * Issues signed ZK session credentials after verifying x402 payment.
+ * Issues signed ZK session credentials after verifying and settling x402 payment.
  * Compliant with x402 zk-session spec v0.1.0
  */
 
@@ -15,9 +15,15 @@ import {
   addSchemePrefix,
   type Point,
   type ZKSessionScheme,
+  type PaymentPayload,
+  type PaymentRequirements,
 } from '@demo/crypto';
-import type { SettlementRequest, SettlementResponse, PaymentResult, IssuanceRequest, IssuanceResponse } from './types.js';
-import { PaymentVerifier, type PaymentVerificationConfig } from './payment-verifier.js';
+import type { SettlementRequest, SettlementResponse } from './types.js';
+// Import from exact/facilitator for server-side verify/settle
+import { ExactEvmScheme } from '@x402/evm/exact/facilitator';
+import type { FacilitatorEvmSigner } from '@x402/evm';
+import { http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 
 /** Configuration for a single tier */
 export interface TierConfig {
@@ -31,34 +37,121 @@ export interface TierConfig {
   durationSeconds: number;
 }
 
+/** EVM chain configuration for payment settlement */
+export interface EvmPaymentConfig {
+  /** Chain ID (e.g., 31337 for Anvil, 84532 for Base Sepolia) */
+  chainId: number;
+  /** RPC URL for the chain */
+  rpcUrl: string;
+  /** Facilitator's private key for executing transfers */
+  facilitatorPrivateKey: `0x${string}`;
+  /** USDC contract address */
+  usdcAddress: `0x${string}`;
+  /** USDC decimals (typically 6) */
+  usdcDecimals?: number;
+}
+
 /** Issuer configuration */
 export interface IssuerConfig {
   /** Unique service identifier */
   serviceId: bigint;
-  /** Issuer's secret key for signing */
+  /** Issuer's secret key for signing ZK credentials */
   secretKey: bigint;
   /** Pricing tiers (sorted by minAmountCents descending by the issuer) */
   tiers: TierConfig[];
   /** Enable mock payments for testing */
   allowMockPayments?: boolean;
-  /** On-chain payment verification config */
-  paymentVerification?: PaymentVerificationConfig;
+  /** EVM payment configuration for executing transfers */
+  evmPayment?: EvmPaymentConfig;
 }
 
 export class CredentialIssuer {
   private publicKey: Point | null = null;
   private initializationPromise: Promise<void> | null = null;
   private readonly tiers: TierConfig[];
-  private readonly paymentVerifier?: PaymentVerifier;
+  private evmScheme?: ExactEvmScheme;
 
   constructor(private readonly config: IssuerConfig) {
     this.tiers = [...config.tiers].sort((a, b) => b.minAmountCents - a.minAmountCents);
 
-    // Initialize payment verifier if configured
-    if (config.paymentVerification) {
-      this.paymentVerifier = new PaymentVerifier(config.paymentVerification);
-      console.log(`[Issuer] On-chain verification enabled for chain ${config.paymentVerification.chainId}`);
+    // Initialize EVM payment scheme if configured
+    if (config.evmPayment) {
+      this.initializeEvmScheme(config.evmPayment);
     }
+  }
+
+  /**
+   * Initialize the x402 EVM payment scheme
+   */
+  private initializeEvmScheme(evmConfig: EvmPaymentConfig): void {
+    const account = privateKeyToAccount(evmConfig.facilitatorPrivateKey);
+    
+    // Create a FacilitatorEvmSigner compatible with @x402/evm/exact/facilitator
+    const signer: FacilitatorEvmSigner = {
+      // Get all addresses this facilitator can use (just one for now)
+      getAddresses: () => [account.address] as readonly `0x${string}`[],
+      
+      // Read contract state
+      readContract: async (args) => {
+        const { createPublicClient } = await import('viem');
+        const client = createPublicClient({
+          transport: http(evmConfig.rpcUrl),
+        });
+        return client.readContract(args as any);
+      },
+      
+      // Verify typed data signature (EIP-712)
+      verifyTypedData: async (args) => {
+        const { verifyTypedData } = await import('viem');
+        return verifyTypedData(args as any);
+      },
+      
+      // Write contract - executes transferWithAuthorization
+      writeContract: async (args) => {
+        const { createWalletClient } = await import('viem');
+        const client = createWalletClient({
+          account,
+          transport: http(evmConfig.rpcUrl),
+        });
+        return client.writeContract(args as any);
+      },
+      
+      // Send raw transaction
+      sendTransaction: async (args) => {
+        const { createWalletClient } = await import('viem');
+        const client = createWalletClient({
+          account,
+          transport: http(evmConfig.rpcUrl),
+        });
+        return client.sendTransaction({
+          to: args.to,
+          data: args.data,
+          account,
+          chain: null,
+        });
+      },
+      
+      // Wait for transaction receipt
+      waitForTransactionReceipt: async (args) => {
+        const { createPublicClient } = await import('viem');
+        const client = createPublicClient({
+          transport: http(evmConfig.rpcUrl),
+        });
+        return client.waitForTransactionReceipt(args) as any;
+      },
+      
+      // Get contract code
+      getCode: async (args) => {
+        const { createPublicClient } = await import('viem');
+        const client = createPublicClient({
+          transport: http(evmConfig.rpcUrl),
+        });
+        return client.getCode(args);
+      },
+    };
+    
+    this.evmScheme = new ExactEvmScheme(signer);
+    console.log(`[Facilitator] EVM payment scheme initialized for chain ${evmConfig.chainId}`);
   }
 
   /**
@@ -110,7 +203,7 @@ export class CredentialIssuer {
 
   /**
    * Settle payment and issue credential (spec §7.2, §7.3)
-   * This is the x402 spec-compliant endpoint.
+   * Uses x402 v2 signed payload flow with EIP-3009 transferWithAuthorization
    */
   async settle(request: SettlementRequest): Promise<SettlementResponse> {
     await this.initialize();
@@ -131,17 +224,32 @@ export class CredentialIssuer {
       y: hexToBigInt('0x' + commitmentBytes.slice(66, 130)),
     };
 
-    // 2. Verify payment
-    const payment = await this.verifyPayment(request.payment);
-    if (!payment.valid) {
-      throw new Error('Invalid payment proof');
+    // 2. Verify and settle payment using x402 EVM scheme
+    if (!this.evmScheme) {
+      throw new Error('EVM payment scheme not configured');
     }
 
+    // First verify the payment payload
+    const verifyResult = await this.evmScheme.verify(request.payment, request.paymentRequirements);
+    if (!verifyResult.isValid) {
+      throw new Error(`Payment verification failed: ${verifyResult.invalidReason}`);
+    }
+
+    // Then settle (execute the transferWithAuthorization)
+    const settleResult = await this.evmScheme.settle(request.payment, request.paymentRequirements);
+    if (!settleResult.success) {
+      throw new Error(`Payment settlement failed: ${settleResult.errorReason}`);
+    }
+
+    console.log(`[Facilitator] Payment settled: ${settleResult.transaction}`);
+
     // 3. Determine tier from payment amount
-    const amountCents = Math.round(payment.amountUSDC * 100);
+    const usdcDecimals = this.config.evmPayment?.usdcDecimals ?? 6;
+    const amountUSDC = Number(BigInt(request.paymentRequirements.amount)) / Math.pow(10, usdcDecimals);
+    const amountCents = Math.round(amountUSDC * 100);
     const tierConfig = this.tiers.find(t => amountCents >= t.minAmountCents);
     if (!tierConfig) {
-      throw new Error(`Payment amount $${payment.amountUSDC} below minimum tier`);
+      throw new Error(`Payment amount $${amountUSDC} below minimum tier`);
     }
 
     // 4. Build credential
@@ -149,7 +257,6 @@ export class CredentialIssuer {
     const expiresAt = now + tierConfig.durationSeconds;
 
     // 5. Compute message hash for signature (spec §9)
-    // Signs: (service_id, tier, max_presentations, issued_at, expires_at, commitment_x, commitment_y)
     const message = poseidonHash7(
       this.config.serviceId,
       BigInt(tierConfig.tier),
@@ -163,24 +270,23 @@ export class CredentialIssuer {
     // 6. Sign with Schnorr
     const signature = await schnorrSign(this.config.secretKey, message);
 
-    // 7. Encode signature as hex string: r.x (64) + r.y (64) + s (64) = 192 hex chars
+    // 7. Encode signature as hex string
     const sigHex = '0x' +
       signature.r.x.toString(16).padStart(64, '0') +
       signature.r.y.toString(16).padStart(64, '0') +
       signature.s.toString(16).padStart(64, '0');
 
-    // 8. Encode commitment as hex (without scheme prefix, spec §7.3)
+    // 8. Encode commitment as hex
     const commitmentOutHex = '0x04' +
       userCommitment.x.toString(16).padStart(64, '0') +
       userCommitment.y.toString(16).padStart(64, '0');
 
     // 9. Return settlement response (spec §7.3)
-    // NOTE: Facilitator MUST NOT store or log commitment-to-payment mappings beyond operational needs
     const response: SettlementResponse = {
       payment_receipt: {
         status: 'settled',
-        txHash: payment.txHash,
-        amountUSDC: payment.amountUSDC,
+        txHash: settleResult.transaction,
+        amountUSDC,
       },
       zk_session: {
         credential: {
@@ -198,132 +304,5 @@ export class CredentialIssuer {
 
     console.log('[Facilitator] Issued credential for tier', tierConfig.tier);
     return response;
-  }
-
-  /**
-   * Issue a credential after verifying payment
-   * @deprecated Use settle() instead for spec-compliant API
-   */
-  async issueCredential(request: IssuanceRequest): Promise<IssuanceResponse> {
-    // Ensure initialized (public key derived) to prevent race conditions
-    await this.initialize();
-
-    // 1. Verify payment
-    const payment = await this.verifyPayment(request.paymentProof);
-    if (!payment.valid) {
-      throw new Error('Invalid payment proof');
-    }
-
-    // 2. Determine tier from payment amount
-    // Convert to integer cents to avoid floating-point precision issues
-    const amountCents = Math.round(payment.amountUSDC * 100);
-    const tierConfig = this.tiers.find(t => amountCents >= t.minAmountCents);
-    if (!tierConfig) {
-      throw new Error(`Payment amount $${payment.amountUSDC} below minimum tier`);
-    }
-
-    // 3. Build credential
-    const now = Math.floor(Date.now() / 1000);
-    const userCommitment: Point = {
-      x: hexToBigInt(request.userCommitment.x),
-      y: hexToBigInt(request.userCommitment.y),
-    };
-
-    // 4. Compute message hash for signature
-    const message = poseidonHash7(
-      this.config.serviceId,
-      BigInt(tierConfig.tier),
-      BigInt(tierConfig.maxPresentations),
-      BigInt(now),
-      BigInt(now + tierConfig.durationSeconds),
-      userCommitment.x,
-      userCommitment.y,
-    );
-
-    // 5. Sign with Schnorr
-    const signature = await schnorrSign(this.config.secretKey, message);
-
-    const pubKey = await this.getPublicKey();
-
-    // 6. Return signed credential
-    const response = {
-      credential: {
-        serviceId: bigIntToHex(this.config.serviceId),
-        tier: tierConfig.tier,
-        maxPresentations: tierConfig.maxPresentations,
-        issuedAt: now,
-        expiresAt: now + tierConfig.durationSeconds,
-        userCommitment: {
-          x: bigIntToHex(userCommitment.x),
-          y: bigIntToHex(userCommitment.y),
-        },
-        signature: {
-          r: {
-            x: bigIntToHex(signature.r.x),
-            y: bigIntToHex(signature.r.y),
-          },
-          s: bigIntToHex(signature.s),
-        },
-        issuerPubkey: {
-          x: bigIntToHex(pubKey.x),
-          y: bigIntToHex(pubKey.y),
-        },
-      },
-    };
-    console.log('[Issuer] Returning signature:', response.credential.signature);
-    return response;
-  }
-
-  /**
-   * Verify an x402 payment
-   */
-  private async verifyPayment(
-    proof: IssuanceRequest['paymentProof']
-  ): Promise<PaymentResult> {
-    // Mock payments for development/testing
-    if (proof.mock && this.config.allowMockPayments) {
-      console.log(`[Issuer] Accepting mock payment: $${proof.mock.amountUSDC} from ${proof.mock.payer}`);
-      return {
-        valid: true,
-        amountUSDC: proof.mock.amountUSDC,
-        payer: proof.mock.payer,
-      };
-    }
-
-    // On-chain payment verification
-    if (proof.txHash) {
-      if (!this.paymentVerifier) {
-        console.error(`[Issuer] On-chain verification requested but not configured`);
-        return { valid: false, amountUSDC: 0, payer: '' };
-      }
-
-      const txHash = proof.txHash;
-      if (typeof txHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-        console.error(`[Issuer] Invalid txHash format for on-chain verification: ${txHash}`);
-        return { valid: false, amountUSDC: 0, payer: '' };
-      }
-
-      const result = await this.paymentVerifier.verifyTransaction(txHash as `0x${string}`);
-
-      if (!result.valid) {
-        console.error(`[Issuer] Payment verification failed: ${result.error}`);
-        return { valid: false, amountUSDC: 0, payer: '' };
-      }
-
-      return {
-        valid: true,
-        amountUSDC: result.amountUSDC,
-        payer: result.from,
-        txHash: result.txHash,
-      };
-    }
-
-    if (proof.facilitatorReceipt) {
-      // TODO: Verify with x402 facilitator API
-      console.log(`[Issuer] Facilitator verification not yet implemented`);
-      return { valid: false, amountUSDC: 0, payer: '' };
-    }
-
-    return { valid: false, amountUSDC: 0, payer: '' };
   }
 }

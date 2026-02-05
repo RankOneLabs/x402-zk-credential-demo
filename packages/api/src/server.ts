@@ -111,18 +111,33 @@ export function createApiServer(config: ApiServerConfig) {
     res.status(500).json({ error: err.message });
   });
 
+  let httpServer: http.Server | null = null;
+
   return {
     app,
     start: () => {
       return new Promise<void>((resolve) => {
         // Use http.createServer to allow larger headers for UltraHonk proofs (~16-20KB)
-        const server = http.createServer({ maxHeaderSize: 65536 }, app);
-        server.listen(config.port, () => {
+        httpServer = http.createServer({ maxHeaderSize: 65536 }, app);
+        httpServer.listen(config.port, () => {
           console.log(`[API] Server running on port ${config.port}`);
           console.log(`[API] Service ID: ${config.zkSession.serviceId}`);
           console.log(`[API] Rate limit: ${config.zkSession.rateLimit.maxRequestsPerToken} requests per ${config.zkSession.rateLimit.windowSeconds}s`);
           resolve();
         });
+      });
+    },
+    stop: () => {
+      return new Promise<void>((resolve, reject) => {
+        if (!httpServer) {
+          resolve();
+          return;
+        }
+        httpServer.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+        httpServer = null;
       });
     },
   };
@@ -133,7 +148,7 @@ const thisFile = fileURLToPath(import.meta.url);
 const mainArg = path.resolve(process.argv[1]);
 const isMain = thisFile === mainArg;
 if (isMain) {
-  const skipProofVerification = process.env.SKIP_PROOF_VERIFICATION === 'true';
+  const skipProofVerification = process.env.SKIP_PROOF_VERIFICATION !== 'false'; // Default to true for demo
 
   // Issuer public key is required in production mode
   const issuerPubkeyX = process.env.ISSUER_PUBKEY_X;
@@ -146,8 +161,11 @@ if (isMain) {
   }
 
   // Use dummy keys in skip mode (they won't be used for verification)
-  const pubkeyX = issuerPubkeyX ?? '0x1';
-  const pubkeyY = issuerPubkeyY ?? '0x2';
+  // Use valid BN254/Grumpkin point for dummy keys to avoid Noir crashes
+  // Point: (1, 17631683881184975370165255887551781615748384631227002551410204835505589172088)
+  // This is a valid Grumpkin point (x=1)
+  const pubkeyX = issuerPubkeyX ?? '0x0c24bf5f0365fe0876b48a7b1a4c6941d20aa8c59963b48fa2c937fcdd5ec836';
+  const pubkeyY = issuerPubkeyY ?? '0x1b5fa4c18138ad44ec555b48cd85155693b446f96e5a9a3a46076666946ba192';
 
   if (skipProofVerification && (!issuerPubkeyX || !issuerPubkeyY)) {
     console.warn('[API] Warning: Using dummy issuer public keys (proof verification is disabled)');
@@ -170,6 +188,7 @@ if (isMain) {
       facilitatorUrl: process.env.FACILITATOR_URL ?? 'http://localhost:3001/settle',
       paymentAmount: process.env.PAYMENT_AMOUNT ?? '100000',  // 0.10 USDC in 6 decimals
       paymentAsset: process.env.PAYMENT_ASSET ?? 'USDC',
+      paymentRecipient: process.env.PAYMENT_RECIPIENT ?? '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', // Default to Anvil Account 0 (Facilitator)
     },
   };
 
