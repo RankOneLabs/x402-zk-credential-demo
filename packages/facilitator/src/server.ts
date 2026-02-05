@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CredentialIssuer, type IssuerConfig } from './issuer.js';
 import type { SettlementRequest } from './types.js';
-import { parseSchemePrefix, addSchemePrefix } from '@demo/crypto';
+import { parseSchemePrefix } from '@demo/crypto';
 
 export interface FacilitatorServerConfig extends IssuerConfig {
   port: number;
