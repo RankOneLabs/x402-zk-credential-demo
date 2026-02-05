@@ -154,12 +154,13 @@ if (isMain) {
       { minAmountCents: 100, tier: 1, maxPresentations: 1000, durationSeconds: 7 * 24 * 60 * 60 },   // $1 = Pro
       { minAmountCents: 10, tier: 0, maxPresentations: 100, durationSeconds: 24 * 60 * 60 },         // $0.10 = Basic
     ],
-    // On-chain verification (enabled if RECIPIENT_ADDRESS is set)
-    ...(recipientAddress && {
-      paymentVerification: {
+    // EVM payment configuration (if private key is set)
+    ...(process.env.FACILITATOR_PRIVATE_KEY && {
+      evmPayment: {
         chainId,
-        recipientAddress,
-        rpcUrl,
+        rpcUrl: rpcUrl ?? 'http://127.0.0.1:8545',
+        facilitatorPrivateKey: process.env.FACILITATOR_PRIVATE_KEY as `0x${string}`,
+        usdcAddress: (process.env.USDC_ADDRESS ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e') as `0x${string}`, // Base Sepolia Default
       },
     }),
   };

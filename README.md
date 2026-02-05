@@ -162,19 +162,25 @@ Default: `time-bucketed` with 60-second windows (demo) / 5-minute (production).
 
 ## On-Chain Payment Verification
 
-To enable real USDC payment verification (Base Sepolia):
+To enable real USDC payment verification (Base Sepolia), configure the following in your `.env` file (see `.env.example`):
 
 ```bash
-# Set environment variables in .env
-# Required for real payment execution:
-# FACILITATOR_PRIVATE_KEY=...
-# CHAIN_ID=84532
-# RPC_URL=https://sepolia.base.org
-# ALLOW_MOCK_PAYMENTS=false
+# Facilitator's private key for executing EIP-3009 transfers
+FACILITATOR_PRIVATE_KEY=0x...
 
-# Or use local Anvil fork
+# Chain configuration
+CHAIN_ID=84532
+RPC_URL=https://sepolia.base.org
+
+# Disable mock payments for production
+ALLOW_MOCK_PAYMENTS=false
+```
+
+For local development, you can use an Anvil fork:
+
+```bash
 ./scripts/start-anvil-fork.sh
-# Update .env to point to localhost:8545
+# Then set RPC_URL=http://localhost:8545 in your .env
 ```
 
 ## Dependencies
