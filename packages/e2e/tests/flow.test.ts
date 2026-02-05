@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, ChildProcess } from 'child_process';
-import { createPublicClient, createWalletClient, http, defineChain, parseEther, parseUnits, keccak256, encodePacked, toHex, hexToBytes } from 'viem';
+import { createPublicClient, createWalletClient, http, defineChain, keccak256, encodePacked } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createApiServer, ZkSessionMiddleware } from '@demo/api';
 import { ZkSessionClient } from '@demo/cli';
