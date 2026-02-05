@@ -426,14 +426,22 @@ export class ZkSessionClient {
       throw new Error('Credential expired. Obtain a new one.');
     }
 
-    // Ensure we have issuer pubkey (either from options or stored)
-    if (options.issuerPubkey) {
-      credential.issuerPubkey = options.issuerPubkey;
-    }
-    if (!credential.issuerPubkey || credential.issuerPubkey.x === '0x0') {
-      throw new Error('Issuer public key not available. Provide it via options.issuerPubkey');
+    // Ensure we have issuer pubkey (either from stored credential or options)
+    const storedIssuerPubkey =
+      credential.issuerPubkey && credential.issuerPubkey.x !== '0x0'
+        ? credential.issuerPubkey
+        : undefined;
+
+    const issuerPubkey = options.issuerPubkey ?? storedIssuerPubkey;
+
+    if (!issuerPubkey) {
+      throw new Error(
+        'Issuer public key not available. Provide it via options.issuerPubkey'
+      );
     }
 
+    // Persist the resolved issuer pubkey so future requests don't need options.issuerPubkey
+    credential.issuerPubkey = issuerPubkey;
     // Select presentation index based on strategy
     const { index, timeBucket } = this.selectPresentationIndex(
       credential,
