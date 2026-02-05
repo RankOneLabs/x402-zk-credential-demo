@@ -30,6 +30,28 @@ import {
 import { RateLimiter, type RateLimitConfig } from './ratelimit.js';
 import { ZkVerifier, parseProofFromRequest } from './verifier.js';
 
+/**
+ * Structured error types for payment processing
+ */
+type PaymentErrorCode = 
+  | 'INVALID_PAYMENT_SIGNATURE'
+  | 'INVALID_REQUEST_STRUCTURE'
+  | 'PAYMENT_REJECTED'
+  | 'FACILITATOR_UNAVAILABLE'
+  | 'FACILITATOR_ERROR'
+  | 'PAYMENT_PROCESSING_ERROR';
+
+class PaymentError extends Error {
+  constructor(
+    public readonly code: PaymentErrorCode,
+    public readonly httpStatus: number,
+    message: string
+  ) {
+    super(message);
+    this.name = 'PaymentError';
+  }
+}
+
 export interface ZkSessionConfig {
   /** Service ID this server accepts credentials for */
   serviceId: bigint;
@@ -184,90 +206,132 @@ export class ZkSessionMiddleware {
       if (paymentSig) {
         try {
           console.log('[ZkSession] Processing payment signature...');
-          const payloadStr = Buffer.from(paymentSig, 'base64').toString('utf-8');
-          const payload = JSON.parse(payloadStr);
-
-          // Security: Only accept canonical extensions.zk_session path (spec §7.2)
-          // Reject if zk_session is in non-canonical location or ambiguous
-          if (payload.zk_session) {
-            res.status(400).json({
-              error: 'INVALID_PAYMENT_SIGNATURE',
-              message: 'Invalid zk_session location: must be in payload.extensions.zk_session per spec §7.2',
-            });
-            return;
+          
+          let payload: Record<string, unknown>;
+          try {
+            const payloadStr = Buffer.from(paymentSig, 'base64').toString('utf-8');
+            payload = JSON.parse(payloadStr);
+          } catch {
+            throw new PaymentError(
+              'INVALID_PAYMENT_SIGNATURE',
+              400,
+              'Malformed payment signature: unable to parse'
+            );
           }
 
-          // Require canonical extensions.zk_session
-          if (!payload.extensions?.zk_session) {
-            res.status(400).json({
-              error: 'INVALID_PAYMENT_SIGNATURE',
-              message: 'Missing zk_session in payload.extensions',
-            });
-            return;
+          // Validate zk_session location per spec §7.2
+          // Only accept extensions.zk_session - reject ambiguous structures
+          if (payload.zk_session && (payload as { extensions?: { zk_session?: unknown } }).extensions?.zk_session) {
+            throw new PaymentError(
+              'INVALID_REQUEST_STRUCTURE',
+              400,
+              'Ambiguous request: zk_session found in both root and extensions'
+            );
+          }
+          const zkSessionData = (payload as { extensions?: { zk_session?: { commitment?: string } } }).extensions?.zk_session;
+          if (!zkSessionData?.commitment) {
+            throw new PaymentError(
+              'INVALID_REQUEST_STRUCTURE',
+              400,
+              'Missing extensions.zk_session.commitment per spec §7.2'
+            );
           }
 
           // Call Facilitator /settle
           // Reuse buildPaymentRequirements() to ensure consistency with 402 response
           const settleReq = {
             payment: payload.payment,
-            paymentRequirements: {
-              scheme: 'exact',
-              network: this.config.network ?? 'eip155:84532',
-              asset: this.config.paymentAsset ?? 'USDC',
-              amount: this.config.paymentAmount ?? '100000',
-              payTo: this.config.paymentRecipient,
-              maxTimeoutSeconds: 300,
-              extra: {
-                // EIP-712 domain info for USDC (required by @x402/evm)
-                name: 'USD Coin',
-                version: '1',
-              },
-            },
-            zk_session: payload.extensions.zk_session,
+            paymentRequirements: this.buildPaymentRequirements(),
+            zk_session: zkSessionData,
           };
 
-          const settleResp = await fetch(this.config.facilitatorUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(settleReq),
-          });
+          let settleResp: globalThis.Response;
+          try {
+            settleResp = await fetch(this.config.facilitatorUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(settleReq),
+            });
+          } catch (fetchError) {
+            throw new PaymentError(
+              'FACILITATOR_UNAVAILABLE',
+              503,
+              'Payment facilitator is temporarily unavailable. Please retry.'
+            );
+          }
 
           if (!settleResp.ok) {
             const errBody = await settleResp.text();
-            throw new Error(`Facilitator error ${settleResp.status}: ${errBody}`);
+            if (settleResp.status >= 400 && settleResp.status < 500) {
+              throw new PaymentError(
+                'PAYMENT_REJECTED',
+                402,
+                `Payment rejected by facilitator: ${errBody}`
+              );
+            } else {
+              throw new PaymentError(
+                'FACILITATOR_UNAVAILABLE',
+                503,
+                'Payment facilitator is temporarily unavailable. Please retry.'
+              );
+            }
           }
 
           const settleData: unknown = await settleResp.json();
 
           // Validate settlement response structure (SettlementResponse from facilitator/types.ts)
           if (!settleData || typeof settleData !== 'object') {
-            throw new Error('Settlement response is not an object');
+            throw new PaymentError(
+              'FACILITATOR_ERROR',
+              502,
+              'Payment facilitator returned an invalid response'
+            );
           }
 
           const response = settleData as Record<string, unknown>;
 
           // Validate payment_receipt
           if (!response.payment_receipt || typeof response.payment_receipt !== 'object') {
-            throw new Error('Settlement response missing payment_receipt');
+            throw new PaymentError(
+              'FACILITATOR_ERROR',
+              502,
+              'Settlement response missing payment_receipt'
+            );
           }
           const receipt = response.payment_receipt as Record<string, unknown>;
           if (receipt.status !== 'settled') {
-            throw new Error(`Settlement failed: status=${receipt.status}`);
+            throw new PaymentError(
+              'PAYMENT_REJECTED',
+              402,
+              `Settlement failed: status=${receipt.status}`
+            );
           }
 
           // Validate zk_session.credential
           if (!response.zk_session || typeof response.zk_session !== 'object') {
-            throw new Error('Settlement response missing zk_session');
+            throw new PaymentError(
+              'FACILITATOR_ERROR',
+              502,
+              'Settlement response missing zk_session'
+            );
           }
           const zkSession = response.zk_session as Record<string, unknown>;
           if (!zkSession.credential || typeof zkSession.credential !== 'object') {
-            throw new Error('Settlement response missing zk_session.credential');
+            throw new PaymentError(
+              'FACILITATOR_ERROR',
+              502,
+              'Settlement response missing zk_session.credential'
+            );
           }
           const cred = zkSession.credential as Record<string, unknown>;
 
           // Validate required credential fields
           if (typeof cred.tier !== 'number') {
-            throw new Error('Settlement response credential missing tier');
+            throw new PaymentError(
+              'FACILITATOR_ERROR',
+              502,
+              'Settlement response credential missing tier'
+            );
           }
 
           // Construct X402PaymentResponse
@@ -296,47 +360,12 @@ export class ZkSessionMiddleware {
           return;
 
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error('[ZkSession] Payment processing failed:', errorMessage);
+          console.error('[ZkSession] Payment processing failed:', error instanceof Error ? error.message : String(error));
 
-          // Distinguish between client errors and server errors
-          if (errorMessage.includes('JSON')) {
-            // Malformed payment signature (client error)
-            res.status(400).json({
-              error: 'INVALID_PAYMENT_SIGNATURE',
-              message: 'Malformed payment signature: unable to parse',
-            });
-            return;
-          }
-
-          if (errorMessage.includes('Facilitator error 4')) {
-            // 4xx from facilitator = client error (bad payment, invalid signature, etc.)
-            res.status(402).json({
-              error: 'PAYMENT_REJECTED',
-              message: `Payment rejected by facilitator: ${errorMessage}`,
-            });
-            return;
-          }
-
-          if (
-            errorMessage.includes('Facilitator error 5') ||
-            errorMessage.includes('fetch failed') ||
-            errorMessage.includes('ECONNREFUSED') ||
-            errorMessage.includes('ETIMEDOUT')
-          ) {
-            // 5xx from facilitator or network error = server error
-            res.status(503).json({
-              error: 'FACILITATOR_UNAVAILABLE',
-              message: 'Payment facilitator is temporarily unavailable. Please retry.',
-            });
-            return;
-          }
-
-          if (errorMessage.includes('Settlement response')) {
-            // Invalid response structure from facilitator
-            res.status(502).json({
-              error: 'FACILITATOR_ERROR',
-              message: 'Payment facilitator returned an invalid response',
+          if (error instanceof PaymentError) {
+            res.status(error.httpStatus).json({
+              error: error.code,
+              message: error.message,
             });
             return;
           }
