@@ -87,36 +87,7 @@ contract MockUSDC {
         bytes32 r,
         bytes32 s
     ) external {
-        require(block.timestamp > validAfter, "Authorization not yet valid");
-        require(block.timestamp < validBefore, "Authorization expired");
-        require(!authorizationState[from][nonce], "Authorization already used");
-
-        bytes32 structHash = keccak256(
-            abi.encode(
-                TRANSFER_WITH_AUTHORIZATION_TYPEHASH,
-                from,
-                to,
-                value,
-                validAfter,
-                validBefore,
-                nonce
-            )
-        );
-
-        bytes32 digest = keccak256(
-            abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash)
-        );
-
-        address signer = ecrecover(digest, v, r, s);
-        require(signer != address(0) && signer == from, "Invalid signature");
-
-        require(balanceOf[from] >= value, "Insufficient balance");
-        balanceOf[from] -= value;
-        balanceOf[to] += value;
-        emit Transfer(from, to, value);
-
-        authorizationState[from][nonce] = true;
-        emit AuthorizationUsed(from, nonce);
+        _transferWithAuthorization(from, to, value, validAfter, validBefore, nonce, v, r, s);
     }
 
     /// @notice EIP-3009: Execute transfer with bytes signature (for smart wallets)
@@ -144,6 +115,21 @@ contract MockUSDC {
         // Normalize v
         if (v < 27) v += 27;
 
+        _transferWithAuthorization(from, to, value, validAfter, validBefore, nonce, v, r, s);
+    }
+
+    /// @dev Internal implementation of EIP-3009 transferWithAuthorization
+    function _transferWithAuthorization(
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) internal {
         require(block.timestamp > validAfter, "Authorization not yet valid");
         require(block.timestamp < validBefore, "Authorization expired");
         require(!authorizationState[from][nonce], "Authorization already used");

@@ -210,7 +210,6 @@ export class ZkSessionMiddleware {
           // Reuse buildPaymentRequirements() to ensure consistency with 402 response
           const settleReq = {
             payment: payload.payment,
-<<<<<<< HEAD
             paymentRequirements: {
               scheme: 'exact',
               network: this.config.network ?? 'eip155:84532',
@@ -225,10 +224,6 @@ export class ZkSessionMiddleware {
               },
             },
             zk_session: payload.extensions.zk_session,
-=======
-            paymentRequirements: this.buildPaymentRequirements(),
-            zk_session: payload.extensions?.zk_session ?? payload.zk_session,
->>>>>>> 28ebaba (PR feedback)
           };
 
           const settleResp = await fetch(this.config.facilitatorUrl, {

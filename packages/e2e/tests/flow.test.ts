@@ -23,7 +23,7 @@ const FACILITATOR_PORT = 3001;
 const API_PORT = 3002;
 const ANVIL_RPC = `http://127.0.0.1:${ANVIL_PORT}`;
 
-// In CI, skip real proof verification (CRS download fails due to network)
+// Set SKIP_PROOF_VERIFICATION=true to skip proof verification (e.g., in CI without CRS)
 const SKIP_PROOF_VERIFICATION = process.env.SKIP_PROOF_VERIFICATION === 'true';
 
 // Default Anvil account #0 (Private Key)

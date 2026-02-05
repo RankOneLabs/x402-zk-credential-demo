@@ -148,7 +148,7 @@ const thisFile = fileURLToPath(import.meta.url);
 const mainArg = path.resolve(process.argv[1]);
 const isMain = thisFile === mainArg;
 if (isMain) {
-  const skipProofVerification = process.env.SKIP_PROOF_VERIFICATION !== 'false'; // Default to true for demo
+  const skipProofVerification = process.env.SKIP_PROOF_VERIFICATION === 'true'; // Default to false (real verification)
 
   // Facilitator public key is required in production mode (spec §4, §6)
   const facilitatorPubkeyX = process.env.FACILITATOR_PUBKEY_X;
