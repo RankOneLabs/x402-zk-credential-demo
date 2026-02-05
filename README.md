@@ -25,14 +25,17 @@ This demo implements a ZK credential system that replaces x402's SIWx identity l
        │                    ├───────────────────►│
        │                    │ 2. 402 + zk_session│
        │                    │◄───────────────────┤
-       │ 3. POST /settle    │                    │
+       │                    │                    │
+       │ 4. settle (tx)     │ 3. Sign EIP-3009   │
        │◄───────────────────┤                    │
-       │ 4. credential      │                    │
-       ├───────────────────►│                    │
-       │                    │ 5. Authorization:  │
+       │                    │                    │
+       │ 5. credential      │                    │
+       │◄───────────────────┤                    │
+       │                    │                    │
+       │                    │ 6. Authorization:  │
        │                    │    ZKSession proof │
        │                    ├───────────────────►│
-       │                    │ 6. 200 OK          │
+       │                    │ 7. 200 OK          │
        │                    │◄───────────────────┤
 ```
 
@@ -70,6 +73,10 @@ npm install
 
 # Build all packages
 npm run build
+
+# Configure environment
+cp .env.example .env
+# Edit .env and set your private keys/RPC URLs
 
 # Run crypto tests (49 tests)
 npm run test --workspace=@demo/crypto
@@ -158,15 +165,16 @@ Default: `time-bucketed` with 60-second windows (demo) / 5-minute (production).
 To enable real USDC payment verification (Base Sepolia):
 
 ```bash
-# Set environment variables
-export RECIPIENT_ADDRESS=0xYourPaymentAddress
-export CHAIN_ID=84532
-export RPC_URL=https://sepolia.base.org
-export ALLOW_MOCK_PAYMENTS=false
+# Set environment variables in .env
+# Required for real payment execution:
+# FACILITATOR_PRIVATE_KEY=...
+# CHAIN_ID=84532
+# RPC_URL=https://sepolia.base.org
+# ALLOW_MOCK_PAYMENTS=false
 
 # Or use local Anvil fork
 ./scripts/start-anvil-fork.sh
-export RPC_URL=http://localhost:8545
+# Update .env to point to localhost:8545
 ```
 
 ## Dependencies

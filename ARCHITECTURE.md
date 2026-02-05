@@ -128,6 +128,7 @@ msg = Poseidon(service_id, tier, max_presentations, issued_at, expires_at, C.x, 
 **Implementation:**
 - **Noir:** `std::hash::poseidon::bn254::hash_N()`
 - **TypeScript:** `poseidon-lite` (BN254 scalar field)
+- **String Inputs:** Strings (e.g., `origin_id`) are mapped to field elements via SHA-256 hash-to-field (big-endian mod r).
 
 ---
 
@@ -136,32 +137,36 @@ msg = Poseidon(service_id, tier, max_presentations, issued_at, expires_at, C.x, 
 ### Issuance Phase (once, after payment)
 
 ```
-User                                    Issuer
+User                                    Issuer (Facilitator)
   |                                       |
   |  1. Generate secrets locally          |
   |     nullifier_seed ← random()         |
   |     blinding_factor ← random()        |
-  |                                       |
-  |  2. Compute commitment                |
   |     C = Pedersen(seed, blinding)      |
   |                                       |
-  |  3. Send issuance request             |
-  |  ─────────────────────────────────────>
-  |     { payment_proof, C }              |
+  |  2. Create Payment Payload            |
+  |     (via x402Client / EIP-3009)       |
+  |     Sign "transferWithAuthorization"  |
   |                                       |
-  |                    4. Verify payment  |
+  |  3. Send settlement request           |
+  |  ─────────────────────────────────────>
+  |     { payment_payload, C }            |
+  |                                       |
+  |                    4. Verify & Settle |
+  |                       (Submit tx to chain)
   |                    5. Sign credential |
   |                       msg = H(attrs, C)
   |                       sig = Schnorr(sk, msg)
   |                                       |
   |  6. Receive credential                |
-  <─────────────────────────────────────── 
-  |     { attrs, C, sig }                 |
+  <───────────────────────────────────────
+  |     { attrs, C, sig, txHash }         |
   |                                       |
   |  7. Store credential + secrets        |
 ```
 
-**Privacy guarantee:** Issuer never learns `nullifier_seed`. The commitment is perfectly hiding—even an unbounded adversary cannot extract the secret.
+**Privacy guarantee:** Issuer never learns `nullifier_seed`. The commitment is perfectly hiding.
+**Payment Guarantee:** Settlement is atomic; credential issued only if transaction succeeds.
 
 ### Presentation Phase (per request)
 
@@ -411,6 +416,7 @@ contracts/            # Solidity contracts (Foundry)
 | Schnorr verify | — | Custom (`schnorr.nr`) |
 | Poseidon | `poseidon-lite` | `std::hash::poseidon::bn254` |
 | EC ops | `@noble/curves/bn254` | `std::embedded_curve_ops` |
+| Payment | `@x402/core`, `@x402/evm` | — |
 
 ### Async Considerations
 
@@ -440,18 +446,16 @@ const expected = "0x2f7a8f9a6c96a...";
 
 ### On-Chain Payment Verification
 
-Payment verification uses viem to check USDC transfers:
+Facilitator uses `@x402/evm` to execute settlements:
 
 ```typescript
-// Verify ERC20 Transfer event
-const logs = await client.getLogs({
-  address: USDC_ADDRESS,
-  event: parseAbiItem('event Transfer(address,address,uint256)'),
-  args: { to: recipientAddress },
-  fromBlock: paymentBlock,
-  toBlock: paymentBlock,
-});
+// Active Settlement (EIP-3009)
+const evmScheme = new ExactEvmScheme(signer);
+const result = await evmScheme.settle(paymentPayload, requirements);
+// result.transaction contains the tx hash
 ```
+
+Supported chains: Base Sepolia (84532), with Anvil fork for local development.
 
 Supported chains: Base Sepolia (84532), with Anvil fork for local development.
 
