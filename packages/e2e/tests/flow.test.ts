@@ -224,7 +224,6 @@ describe('End-to-End Flow', () => {
         const zkSession = discoveryData.extensions!.zk_session!;
         const paymentReqs = discoveryData.accepts[0];
         const facilitatorUrl = zkSession.facilitator_url || `http://localhost:${FACILITATOR_PORT}/settle`;
-        const requiredAmount = BigInt(paymentReqs.amount);
 
         // 1. Mint USDC to User
         const mintAbi = [{
