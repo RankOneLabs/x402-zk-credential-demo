@@ -3,7 +3,6 @@ import {
     SchemeNetworkClient,
     PaymentRequirements,
     PaymentPayload,
-    Network
 } from '@x402/core/types';
 import {
     createWalletClient,
