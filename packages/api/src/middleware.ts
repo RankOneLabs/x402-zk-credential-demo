@@ -105,10 +105,32 @@ export class ZkSessionMiddleware {
   }
 
   /**
+   * Build payment requirements for both 402 responses and settlement requests.
+   * This ensures consistency between what we advertise and what we accept.
+   */
+  private buildPaymentRequirements() {
+    return {
+      scheme: 'exact' as const,
+      network: (this.config.network ?? 'eip155:84532') as `${string}:${string}`,
+      asset: this.config.paymentAsset ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia USDC
+      amount: this.config.paymentAmount ?? '100000',
+      payTo: this.config.paymentRecipient ?? this.config.facilitatorUrl,
+      maxTimeoutSeconds: 300,
+      extra: {
+        // EIP-712 domain info for USDC (required by @x402/evm)
+        name: 'USD Coin',
+        version: '1',
+      },
+    };
+  }
+
+  /**
    * Build x402 Payment Required response (spec §6)
    * Uses @x402/core PaymentRequired format with accepts[] array
    */
   private build402Response(resourceUrl: string): X402WithZKSessionResponse {
+    const paymentReqs = this.buildPaymentRequirements();
+    
     return {
       x402Version: 2,
       resource: {
@@ -118,12 +140,8 @@ export class ZkSessionMiddleware {
       },
       accepts: [
         {
-          scheme: 'exact',
-          network: (this.config.network ?? 'eip155:84532') as `${string}:${string}`,
-          asset: this.config.paymentAsset ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia USDC
-          amount: this.config.paymentAmount ?? '100000',
-          payTo: this.config.paymentRecipient ?? this.config.facilitatorUrl, // In v2 managed mode, payTo might be server or facilitator
-          maxTimeoutSeconds: 300,
+          ...paymentReqs,
+          // For 402 response, extra should be empty (client adds EIP-712 info)
           extra: {},
         },
       ],
@@ -189,9 +207,10 @@ export class ZkSessionMiddleware {
           }
 
           // Call Facilitator /settle
-          // Map client's X402PaymentRequest to Facilitator's SettlementRequest
+          // Reuse buildPaymentRequirements() to ensure consistency with 402 response
           const settleReq = {
             payment: payload.payment,
+<<<<<<< HEAD
             paymentRequirements: {
               scheme: 'exact',
               network: this.config.network ?? 'eip155:84532',
@@ -206,6 +225,10 @@ export class ZkSessionMiddleware {
               },
             },
             zk_session: payload.extensions.zk_session,
+=======
+            paymentRequirements: this.buildPaymentRequirements(),
+            zk_session: payload.extensions?.zk_session ?? payload.zk_session,
+>>>>>>> 28ebaba (PR feedback)
           };
 
           const settleResp = await fetch(this.config.facilitatorUrl, {
