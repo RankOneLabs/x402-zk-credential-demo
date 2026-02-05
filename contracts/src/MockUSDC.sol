@@ -110,13 +110,13 @@ contract MockUSDC {
         address signer = ecrecover(digest, v, r, s);
         require(signer != address(0) && signer == from, "Invalid signature");
 
-        authorizationState[from][nonce] = true;
-        emit AuthorizationUsed(from, nonce);
-
         require(balanceOf[from] >= value, "Insufficient balance");
         balanceOf[from] -= value;
         balanceOf[to] += value;
         emit Transfer(from, to, value);
+
+        authorizationState[from][nonce] = true;
+        emit AuthorizationUsed(from, nonce);
     }
 
     /// @notice EIP-3009: Execute transfer with bytes signature (for smart wallets)
