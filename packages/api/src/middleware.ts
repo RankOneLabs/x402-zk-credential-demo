@@ -172,7 +172,7 @@ export class ZkSessionMiddleware {
           // Call Facilitator /settle
           // Map client's X402PaymentRequest to Facilitator's SettlementRequest
           const settleReq = {
-            paymentPayload: payload.payment,
+            payment: payload.payment,
             paymentRequirements: {
               amount: this.config.paymentAmount ?? '100000',
               asset: this.config.paymentAsset ?? 'USDC',
