@@ -451,6 +451,34 @@ export class ZkCredentialMiddleware {
   }
 
   /**
+   * Strictly validate a base64 string
+   * Node's Buffer.from() is lenient and may ignore invalid characters.
+   * This performs strict validation using regex and round-trip check.
+   */
+  private isValidBase64(str: string): boolean {
+    // Empty string is not valid base64
+    if (str.length === 0) {
+      return false;
+    }
+
+    // Check if string contains only valid base64 characters
+    // Valid base64: A-Z, a-z, 0-9, +, /, and optional padding with =
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!base64Regex.test(str)) {
+      return false;
+    }
+
+    // Perform round-trip check: decode then encode should match original
+    try {
+      const decoded = Buffer.from(str, 'base64');
+      const reencoded = decoded.toString('base64');
+      return str === reencoded;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Verify a request's ZK credential (spec §15)
    * 
    * Verification flow:
@@ -476,10 +504,12 @@ export class ZkCredentialMiddleware {
       return { valid: false, errorCode: 'unsupported_suite', message: `Unsupported suite: ${presentation.suite}` };
     }
 
-    const proofBytes = Buffer.from(presentation.proofB64, 'base64');
-    if (proofBytes.length === 0) {
+    // Step 3.5: Strictly validate base64 proof encoding
+    if (!this.isValidBase64(presentation.proofB64)) {
       return { valid: false, errorCode: 'invalid_proof', message: 'Invalid proof encoding' };
     }
+
+    const proofBytes = Buffer.from(presentation.proofB64, 'base64');
 
     const originId = this.computeOriginId(req);
     const serverTime = BigInt(Math.floor(Date.now() / 1000));

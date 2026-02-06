@@ -168,6 +168,68 @@ describe('ZkCredentialMiddleware', () => {
         expect(result.message).toBe('Invalid proof encoding');
       }
     });
+
+    it('should reject malformed base64 with invalid characters', async () => {
+      const middleware = new ZkCredentialMiddleware(defaultConfig);
+      const body = createValidBody('0xabc', 1);
+      // Invalid characters like @ and # are not valid in base64
+      (body.zk_credential as Record<string, unknown>).proof = 'invalid@#chars';
+      const req = createMockRequest({}, '/api/test', body);
+
+      const result = await middleware.verifyRequest(req as Request);
+
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.errorCode).toBe('invalid_proof');
+        expect(result.message).toBe('Invalid proof encoding');
+      }
+    });
+
+    it('should reject base64 with spaces', async () => {
+      const middleware = new ZkCredentialMiddleware(defaultConfig);
+      const body = createValidBody('0xabc', 1);
+      // Spaces are not valid in strict base64
+      (body.zk_credential as Record<string, unknown>).proof = 'AQID BAU=';
+      const req = createMockRequest({}, '/api/test', body);
+
+      const result = await middleware.verifyRequest(req as Request);
+
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.errorCode).toBe('invalid_proof');
+        expect(result.message).toBe('Invalid proof encoding');
+      }
+    });
+
+    it('should reject base64 with incorrect padding', async () => {
+      const middleware = new ZkCredentialMiddleware(defaultConfig);
+      const body = createValidBody('0xabc', 1);
+      // This would pass Buffer.from() but fails round-trip check
+      (body.zk_credential as Record<string, unknown>).proof = 'QQ='; // Should be 'QQ==' for proper padding
+      const req = createMockRequest({}, '/api/test', body);
+
+      const result = await middleware.verifyRequest(req as Request);
+
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.errorCode).toBe('invalid_proof');
+        expect(result.message).toBe('Invalid proof encoding');
+      }
+    });
+
+    it('should accept valid base64 proof', async () => {
+      const middleware = new ZkCredentialMiddleware(defaultConfig);
+      const body = createValidBody('0xabc', 1);
+      // Valid base64 encoding
+      (body.zk_credential as Record<string, unknown>).proof = Buffer.from([1, 2, 3, 4]).toString('base64');
+      const req = createMockRequest({}, '/api/test', body);
+
+      const result = await middleware.verifyRequest(req as Request);
+
+      // Should pass base64 validation and proceed to other checks
+      // (In skip mode, it should succeed)
+      expect(result.valid).toBe(true);
+    });
   });
 
   describe('verifyRequest - minimum tier enforcement', () => {
