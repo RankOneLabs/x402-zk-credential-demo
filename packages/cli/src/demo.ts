@@ -1,8 +1,8 @@
 /**
  * Demo: Make a real USDC payment and obtain credential
  * 
- * This script demonstrates the full x402 zk-session payment flow:
- * 1. Discovery: Fetch 402 response with zk_session extension
+ * This script demonstrates the full x402 zk-credential payment flow:
+ * 1. Discovery: Fetch 402 response with zk_credential extension
  * 2. Payment: Create EIP-3009 signed authorization via x402Client
  * 3. Settlement: Submit payment to facilitator and obtain credential
  * 4. Access: Make authenticated requests with ZK proofs
@@ -21,7 +21,7 @@ const API_URL = process.env.API_URL ?? 'http://localhost:3002';
 const PRIVATE_KEY = (process.env.PRIVATE_KEY ?? '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d') as `0x${string}`;
 
 async function main() {
-  console.log('=== ZK Session Client Demo ===\n');
+  console.log('=== ZK Credential Client Demo ===\n');
   
   const account = privateKeyToAccount(PRIVATE_KEY);
   console.log(`Using account: ${account.address}\n`);
@@ -30,7 +30,7 @@ async function main() {
   console.log('━━━ PHASE 1: Discovery (402 Response) ━━━\n');
 
   console.log(`Requesting protected resource: ${API_URL}/api/whoami`);
-  console.log('Expected: 402 Payment Required with zk_session extension\n');
+  console.log('Expected: 402 Payment Required with zk_credential extension\n');
 
   const discoveryResponse = await fetch(`${API_URL}/api/whoami`);
 
@@ -48,15 +48,15 @@ async function main() {
 
   const discoveryData = await discoveryResponse.json() as any;
   
-  if (!discoveryData.extensions?.zk_session) {
-    console.error('✗ Missing zk_session extension in 402 response');
+  if (!discoveryData.extensions?.zk_credential) {
+    console.error('✗ Missing zk_credential extension in 402 response');
     process.exit(1);
   }
 
   const paymentReqs = discoveryData.accepts[0];
-  const zkSession = discoveryData.extensions.zk_session;
-  const facilitatorUrl = zkSession.facilitator_url;
-  const facilitatorPubkeyString = zkSession.facilitator_pubkey;
+  const zkCredential = discoveryData.extensions.zk_credential;
+  const facilitatorUrl = zkCredential.facilitator_url;
+  const facilitatorPubkeyString = zkCredential.facilitator_pubkey;
 
   console.log('✓ Received 402 response:\n');
   console.log('  Payment Requirements:');
@@ -65,8 +65,8 @@ async function main() {
   console.log(`    - amount: ${paymentReqs.amount}`);
   console.log(`    - asset: ${paymentReqs.asset}`);
   console.log(`    - payTo: ${paymentReqs.payTo}`);
-  console.log('  ZK Session Extension:');
-  console.log(`    - schemes: [${zkSession.schemes.join(', ')}]`);
+  console.log('  ZK Credential Extension:');
+  console.log(`    - credential_suites: [${zkCredential.credential_suites.join(', ')}]`);
   console.log(`    - facilitator_pubkey: ${facilitatorPubkeyString.slice(0, 40)}...`);
   console.log(`    - facilitator_url: ${facilitatorUrl}\n`);
 
@@ -128,7 +128,7 @@ async function main() {
   console.log('   Credential:');
   console.log(`   - service_id: ${credential.serviceId.slice(0, 20)}...`);
   console.log(`   - tier: ${credential.tier}`);
-  console.log(`   - max_presentations: ${credential.maxPresentations}`);
+  console.log(`   - presentation_budget: ${credential.presentationBudget}`);
   console.log(`   - expires_at: ${new Date(credential.expiresAt * 1000).toLocaleString()}\n`);
 
   // === PHASE 3: Anonymous API Access ===

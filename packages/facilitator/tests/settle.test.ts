@@ -39,7 +39,7 @@ const TEST_TIERS: TierConfig[] = [
 
 const TEST_COMMITMENT_X = '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
 const TEST_COMMITMENT_Y = 'fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321';
-const TEST_COMMITMENT = `pedersen-schnorr-bn254:0x04${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`;
+const TEST_COMMITMENT = `pedersen-schnorr-poseidon-ultrahonk:0x04${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`;
 
 const TEST_PAYMENT_PAYLOAD: PaymentPayload = {
   x402Version: 2,
@@ -125,8 +125,10 @@ describe('CredentialIssuer.settle()', () => {
     return {
       payment: TEST_PAYMENT_PAYLOAD,
       paymentRequirements: TEST_PAYMENT_REQUIREMENTS,
-      zk_session: {
-        commitment: TEST_COMMITMENT,
+      extensions: {
+        zk_credential: {
+          commitment: TEST_COMMITMENT,
+        },
       },
       ...overrides,
     };
@@ -155,11 +157,11 @@ describe('CredentialIssuer.settle()', () => {
       expect(response.payment_receipt.amountUSDC).toBe(0.1); // 100000 / 10^6
 
       // Verify credential structure
-      const cred = response.zk_session.credential;
-      expect(cred.scheme).toBe('pedersen-schnorr-bn254');
+      const cred = response.extensions.zk_credential.credential;
+      expect(cred.scheme).toBe('pedersen-schnorr-poseidon-ultrahonk');
       expect(cred.service_id).toBe('0x00000000000000000000000000000000000000000000000000000000000003e9'); // 1001n
       expect(cred.tier).toBe(1); // $0.10 qualifies for tier 1
-      expect(cred.max_presentations).toBe(10);
+      expect(cred.presentation_budget).toBe(10);
       expect(cred.issued_at).toBe(Math.floor(new Date('2026-01-15T12:00:00Z').getTime() / 1000));
       expect(cred.expires_at).toBe(cred.issued_at + 3600); // tier 1 duration
       expect(cred.commitment).toMatch(/^0x04[a-f0-9]{128}$/);
@@ -177,10 +179,10 @@ describe('CredentialIssuer.settle()', () => {
 
       const response = await issuer.settle(request);
 
-      expect(response.zk_session.credential.tier).toBe(2); // $1.00 qualifies for tier 2
-      expect(response.zk_session.credential.max_presentations).toBe(50);
-      expect(response.zk_session.credential.expires_at).toBe(
-        response.zk_session.credential.issued_at + 86400 // tier 2 duration
+      expect(response.extensions.zk_credential.credential.tier).toBe(2); // $1.00 qualifies for tier 2
+      expect(response.extensions.zk_credential.credential.presentation_budget).toBe(50);
+      expect(response.extensions.zk_credential.credential.expires_at).toBe(
+        response.extensions.zk_credential.credential.issued_at + 86400 // tier 2 duration
       );
     });
 
@@ -205,7 +207,7 @@ describe('CredentialIssuer.settle()', () => {
       const response = await issuer.settle(request);
 
       expect(response.payment_receipt.amountUSDC).toBe(1.0);
-      expect(response.zk_session.credential.tier).toBe(2);
+      expect(response.extensions.zk_credential.credential.tier).toBe(2);
     });
   });
 
@@ -213,8 +215,10 @@ describe('CredentialIssuer.settle()', () => {
     it('should reject unsupported scheme prefix', async () => {
       const issuer = createIssuer();
       const request = createSettlementRequest({
-        zk_session: {
-          commitment: `unsupported-scheme:0x04${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`,
+        extensions: {
+          zk_credential: {
+            commitment: `unsupported-scheme:0x04${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`,
+          },
         },
       });
 
@@ -224,9 +228,11 @@ describe('CredentialIssuer.settle()', () => {
     it('should reject commitment without 04 prefix', async () => {
       const issuer = createIssuer();
       const request = createSettlementRequest({
-        zk_session: {
-          // Missing 04 prefix for uncompressed point
-          commitment: `pedersen-schnorr-bn254:0x${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`,
+        extensions: {
+          zk_credential: {
+            // Missing 04 prefix for uncompressed point
+            commitment: `pedersen-schnorr-poseidon-ultrahonk:0x${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`,
+          },
         },
       });
 
@@ -236,8 +242,10 @@ describe('CredentialIssuer.settle()', () => {
     it('should reject commitment with wrong length', async () => {
       const issuer = createIssuer();
       const request = createSettlementRequest({
-        zk_session: {
-          commitment: `pedersen-schnorr-bn254:0x04${TEST_COMMITMENT_X}`, // Missing Y coordinate
+        extensions: {
+          zk_credential: {
+            commitment: `pedersen-schnorr-poseidon-ultrahonk:0x04${TEST_COMMITMENT_X}`, // Missing Y coordinate
+          },
         },
       });
 
@@ -247,8 +255,10 @@ describe('CredentialIssuer.settle()', () => {
     it('should reject commitment with invalid hex', async () => {
       const issuer = createIssuer();
       const request = createSettlementRequest({
-        zk_session: {
-          commitment: `pedersen-schnorr-bn254:0x04${'z'.repeat(64)}${'x'.repeat(64)}`,
+        extensions: {
+          zk_credential: {
+            commitment: `pedersen-schnorr-poseidon-ultrahonk:0x04${'z'.repeat(64)}${'x'.repeat(64)}`,
+          },
         },
       });
 
@@ -327,7 +337,7 @@ describe('CredentialIssuer.settle()', () => {
       });
 
       const response = await issuer.settle(request);
-      expect(response.zk_session.credential.tier).toBe(1);
+      expect(response.extensions.zk_credential.credential.tier).toBe(1);
     });
 
     it('should assign highest qualifying tier', async () => {
@@ -348,8 +358,8 @@ describe('CredentialIssuer.settle()', () => {
       });
 
       const response = await issuer.settle(request);
-      expect(response.zk_session.credential.tier).toBe(2);
-      expect(response.zk_session.credential.max_presentations).toBe(50);
+      expect(response.extensions.zk_credential.credential.tier).toBe(2);
+      expect(response.extensions.zk_credential.credential.presentation_budget).toBe(50);
     });
   });
 
@@ -361,7 +371,7 @@ describe('CredentialIssuer.settle()', () => {
       const response = await issuer.settle(request);
 
       // 42n should be padded to 32 bytes hex
-      expect(response.zk_session.credential.service_id).toBe(
+      expect(response.extensions.zk_credential.credential.service_id).toBe(
         '0x000000000000000000000000000000000000000000000000000000000000002a'
       );
     });
@@ -372,7 +382,7 @@ describe('CredentialIssuer.settle()', () => {
 
       const response = await issuer.settle(request);
 
-      expect(response.zk_session.credential.commitment).toBe(
+      expect(response.extensions.zk_credential.credential.commitment).toBe(
         `0x04${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`
       );
     });
@@ -384,7 +394,7 @@ describe('CredentialIssuer.settle()', () => {
       const response = await issuer.settle(request);
 
       // Signature should be r.x (64 hex) + r.y (64 hex) + s (64 hex) = 192 hex chars
-      const sig = response.zk_session.credential.signature;
+      const sig = response.extensions.zk_credential.credential.signature;
       expect(sig).toMatch(/^0x[a-f0-9]{192}$/);
       expect(sig.length).toBe(2 + 192); // 0x prefix + 192 hex chars
     });

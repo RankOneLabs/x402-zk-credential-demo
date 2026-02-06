@@ -1,8 +1,8 @@
 /**
  * Common types for cryptographic operations
- * Compliant with x402 zk-session spec v0.1.0
+ * Compliant with x402 zk-credential spec v0.2.0
  * 
- * Uses @x402/core types for payment layer, extends with zk_session types.
+ * Uses @x402/core types for payment layer, extends with zk_credential types.
  */
 
 // Re-export x402 core types for convenience
@@ -44,18 +44,20 @@ export interface Commitment {
 }
 
 // =============================================================================
-// ZK Session Credential Types (spec §7.3, Appendix A)
+// ZK Credential Types (spec §8, Appendix A)
 // =============================================================================
 
-/** Supported cryptographic schemes */
-export type ZKSessionScheme = 'pedersen-schnorr-bn254';
+/** Supported credential suites */
+export type ZKCredentialSuite =
+  | 'pedersen-schnorr-poseidon-ultrahonk'
+  | 'pedersen-schnorr-poseidon-groth16';
 
 /** Credential as signed by facilitator (spec §7.3) */
 export interface SignedCredential {
-  scheme: ZKSessionScheme;
+  suite: ZKCredentialSuite;
   serviceId: bigint;
   tier: number;
-  maxPresentations: number;
+  presentationBudget: number;
   issuedAt: number;
   expiresAt: number;
   userCommitment: Point;
@@ -81,39 +83,41 @@ export interface PublicInputs {
 export interface ProofOutputs {
   originToken: bigint;
   tier: number;
+  expiresAt: number;
 }
 
 // =============================================================================
-// x402 Protocol Types with ZK Session Extension (spec §6, §7, §13)
+// x402 Protocol Types with ZK Credential Extension (spec §6-9, §14)
 // =============================================================================
 
-/** zk_session extension in 402 response (spec §6) */
-export interface ZKSessionExtension {
-  version: '0.1';
-  schemes: ZKSessionScheme[];
-  facilitator_pubkey: string; // scheme-prefixed: "pedersen-schnorr-bn254:0x..."
+/** zk_credential extension in 402 response (spec §7) */
+export interface ZKCredentialExtension {
+  version: '0.2.0';
+  credential_suites: ZKCredentialSuite[];
+  facilitator_pubkey: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
   facilitator_url?: string;   // URL to send settlement requests
+  max_credential_ttl?: number;
 }
 
 /**
- * Extended x402 PaymentRequired with zk_session extension
+ * Extended x402 PaymentRequired with zk_credential extension
  * This is what the API returns for 402 Payment Required responses.
  */
-export interface X402WithZKSessionResponse extends PaymentRequired {
+export interface X402WithZKCredentialResponse extends PaymentRequired {
   extensions: {
-    zk_session: ZKSessionExtension;
+    zk_credential: ZKCredentialExtension;
   } & Record<string, unknown>;
 }
 
 /**
- * @deprecated Use X402WithZKSessionResponse instead
+ * @deprecated Use X402WithZKCredentialResponse instead
  * Legacy x402 response format - kept for backward compatibility during migration
  */
 export interface X402Response {
   x402: {
     payment_requirements: X402PaymentRequirements;
     extensions: {
-      zk_session: ZKSessionExtension;
+      zk_credential: ZKCredentialExtension;
     };
   };
 }
@@ -128,64 +132,73 @@ export interface X402PaymentRequirements {
   facilitator: string;
 }
 
-/** Payment request to facilitator with zk_session commitment (spec §7.2) */
+/** Payment request to facilitator with zk_credential commitment (spec §8.3) */
 export interface X402PaymentRequest {
   x402Version: 2;
-  payment: unknown; // x402 payment proof (opaque to zk-session layer)
+  payment: unknown; // x402 payment proof (opaque to zk-credential layer)
   extensions: {
-    zk_session: {
-      commitment: string; // scheme-prefixed: "pedersen-schnorr-bn254:0x..."
+    zk_credential: {
+      commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
     };
   };
 }
 
 /** Credential in wire format (JSON-serializable) */
 export interface CredentialWireFormat {
-  scheme: ZKSessionScheme;
+  suite: ZKCredentialSuite;
+  kid?: string;
   service_id: string;
   tier: number;
-  max_presentations: number;
+  presentation_budget: number;
   issued_at: number;
   expires_at: number;
-  commitment: string; // hex, NO scheme prefix
-  signature: string;  // hex-encoded
+  commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
+  signature: string;  // hex-encoded ("0x<R_x><R_y><s>")
 }
 
-/** Payment response from facilitator (spec §7.3) */
+/** Payment response from facilitator (spec §8.4) */
 export interface X402PaymentResponse {
   x402Version: 2;
-  payment_receipt: unknown; // x402 receipt (opaque to zk-session layer)
+  payment_receipt: unknown; // x402 receipt (opaque to zk-credential layer)
   extensions: {
-    zk_session: {
+    zk_credential: {
       credential: CredentialWireFormat;
     };
   };
 }
 
 // =============================================================================
-// Error Types (spec §13)
+// Error Types (spec §14)
 // =============================================================================
 
-/** ZK session error codes per spec §13 */
-export type ZKSessionErrorCode =
-  | 'unsupported_zk_scheme'   // 400
-  | 'invalid_zk_proof'        // 401
-  | 'proof_expired'           // 401
-  | 'tier_insufficient'       // 403
+/** ZK credential error codes per spec §14 */
+export type ZKCredentialErrorCode =
+  | 'credential_expired'      // 402
+  | 'credential_missing'      // 402
+  | 'tier_insufficient'       // 402
+  | 'unsupported_suite'       // 400
+  | 'invalid_proof'           // 400
+  | 'origin_mismatch'         // 400
+  | 'payload_too_large'       // 413
+  | 'unsupported_media_type'  // 415
   | 'rate_limited';           // 429
 
 /** Error response body */
-export interface ZKSessionError {
-  error: ZKSessionErrorCode;
+export interface ZKCredentialError {
+  error: ZKCredentialErrorCode;
   message?: string;
 }
 
 /** Map error codes to HTTP status */
-export const ERROR_CODE_TO_STATUS: Record<ZKSessionErrorCode, number> = {
-  unsupported_zk_scheme: 400,
-  invalid_zk_proof: 401,
-  proof_expired: 401,
-  tier_insufficient: 403,
+export const ERROR_CODE_TO_STATUS: Record<ZKCredentialErrorCode, number> = {
+  credential_expired: 402,
+  credential_missing: 402,
+  tier_insufficient: 402,
+  unsupported_suite: 400,
+  invalid_proof: 400,
+  origin_mismatch: 400,
+  payload_too_large: 413,
+  unsupported_media_type: 415,
   rate_limited: 429,
 };
 
@@ -193,21 +206,24 @@ export const ERROR_CODE_TO_STATUS: Record<ZKSessionErrorCode, number> = {
 // Utility Functions
 // =============================================================================
 
-/** Parse scheme-prefixed string (e.g., "pedersen-schnorr-bn254:0x...") */
-export function parseSchemePrefix(prefixed: string): { scheme: ZKSessionScheme; value: string } {
+/** Parse suite-prefixed string (e.g., "pedersen-schnorr-poseidon-ultrahonk:0x...") */
+export function parseSchemePrefix(prefixed: string): { scheme: ZKCredentialSuite; value: string } {
   const colonIdx = prefixed.indexOf(':');
   if (colonIdx === -1) {
     throw new Error('Invalid scheme-prefixed string: missing colon');
   }
-  const scheme = prefixed.slice(0, colonIdx) as ZKSessionScheme;
+  const scheme = prefixed.slice(0, colonIdx) as ZKCredentialSuite;
   const value = prefixed.slice(colonIdx + 1);
-  if (scheme !== 'pedersen-schnorr-bn254') {
+  if (
+    scheme !== 'pedersen-schnorr-poseidon-ultrahonk' &&
+    scheme !== 'pedersen-schnorr-poseidon-groth16'
+  ) {
     throw new Error(`Unsupported scheme: ${scheme}`);
   }
   return { scheme, value };
 }
 
 /** Create scheme-prefixed string */
-export function addSchemePrefix(scheme: ZKSessionScheme, value: string): string {
+export function addSchemePrefix(scheme: ZKCredentialSuite, value: string): string {
   return `${scheme}:${value}`;
 }

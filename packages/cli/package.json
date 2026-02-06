@@ -1,11 +1,11 @@
 {
   "name": "@demo/cli",
   "version": "0.1.0",
-  "description": "CLI client for ZK Session credentials",
+  "description": "CLI client for ZK credentials",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "zk-session": "./dist/cli.js"
+    "zk-credential": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

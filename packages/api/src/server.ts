@@ -1,7 +1,7 @@
 /**
- * API Server with ZK Session Protection
+ * API Server with ZK Credential Protection
  * 
- * Example server demonstrating ZK session verification.
+ * Example server demonstrating ZK credential verification.
  */
 
 import express, { type Request, type Response } from 'express';
@@ -27,11 +27,11 @@ export function createApiServer(config: ApiServerConfig) {
     origin: config.corsOrigins ?? '*',
     exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
   }));
-  app.use(express.json());
+  app.use(express.json({ limit: '64kb' }));
 
   // Health check (public)
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'zk-session-api' });
+    res.json({ status: 'ok', service: 'zk-credential-api' });
   });
 
   // Stats (public)

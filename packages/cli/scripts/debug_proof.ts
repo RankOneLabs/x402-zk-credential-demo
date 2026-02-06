@@ -27,7 +27,7 @@ async function main() {
     const currentTime = BigInt(Math.floor(Date.now() / 1000));
     const originId = 12345n;
     const credTier = 1n;
-    const credMaxPresentations = 1000n;
+    const credPresentationBudget = 1000n;
     const credIssuedAt = currentTime - 1000n;
     const credExpiresAt = currentTime + 86400n;
     const presentationIndex = 0n;
@@ -39,7 +39,7 @@ async function main() {
     const message = poseidonHash7(
         serviceId,
         credTier,
-        credMaxPresentations,
+        credPresentationBudget,
         credIssuedAt,
         credExpiresAt,
         commitment.point.x,
@@ -63,7 +63,7 @@ async function main() {
 
         cred_service_id: fmt(serviceId),
         cred_tier: fmt(credTier),
-        cred_max_presentations: fmt(credMaxPresentations),
+        cred_presentation_budget: fmt(credPresentationBudget),
         cred_issued_at: fmt(credIssuedAt),
         cred_expires_at: fmt(credExpiresAt),
         cred_commitment_x: fmt(commitment.point.x),

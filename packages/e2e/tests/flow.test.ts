@@ -5,7 +5,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { createApiServer, ZkSessionMiddleware } from '@demo/api';
 import { ZkSessionClient } from '@demo/cli';
 import { createFacilitatorServer } from '@demo/facilitator';
-import { hexToBigInt, parseSchemePrefix, type X402WithZKSessionResponse, type PaymentPayload, type PaymentRequirements } from '@demo/crypto';
+import { hexToBigInt, parseSchemePrefix, type X402WithZKCredentialResponse, type PaymentPayload, type PaymentRequirements } from '@demo/crypto';
 // Import x402 client libs for payment payload creation
 import { x402Client } from '@x402/core/client';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
@@ -163,7 +163,7 @@ describe('End-to-End Flow', () => {
         const infoData = await infoResponse.json() as { 
             facilitator_pubkey: string;
             service_id: string;
-            schemes: string[];
+            credential_suites: string[];
         };
         
         // Parse scheme-prefixed pubkey
@@ -205,7 +205,7 @@ describe('End-to-End Flow', () => {
         const discoveryResponse = await fetch(`http://localhost:${API_PORT}/api/whoami`);
         expect(discoveryResponse.status).toBe(402);
 
-        const discoveryData = await discoveryResponse.json() as X402WithZKSessionResponse;
+        const discoveryData = await discoveryResponse.json() as X402WithZKCredentialResponse;
         console.log('Discovery Data (x402 format):', JSON.stringify(discoveryData, null, 2));
 
         // Verify x402 PaymentRequired format (spec v2)
@@ -215,13 +215,13 @@ describe('End-to-End Flow', () => {
         expect(discoveryData.accepts[0].scheme).toBe('exact');
         expect(discoveryData.accepts[0].asset).toBe(usdcAddress);
         
-        // Verify zk_session extension
-        expect(discoveryData.extensions?.zk_session).toBeDefined();
-        expect(discoveryData.extensions!.zk_session!.version).toBe('0.1');
-        expect(discoveryData.extensions!.zk_session!.schemes).toContain('pedersen-schnorr-bn254');
+        // Verify zk_credential extension
+        expect(discoveryData.extensions?.zk_credential).toBeDefined();
+        expect(discoveryData.extensions!.zk_credential!.version).toBe('0.2.0');
+        expect(discoveryData.extensions!.zk_credential!.credential_suites).toContain('pedersen-schnorr-poseidon-ultrahonk');
 
         // Parse facilitator URL and payment details from 402 response
-        const zkSession = discoveryData.extensions!.zk_session!;
+        const zkSession = discoveryData.extensions!.zk_credential!;
         const paymentReqs = discoveryData.accepts[0];
         const facilitatorUrl = zkSession.facilitator_url || `http://localhost:${FACILITATOR_PORT}/settle`;
 
@@ -298,7 +298,7 @@ describe('End-to-End Flow', () => {
         // 4. Settle and obtain credential via Client (spec §7.2, §7.3)
         console.log('Settling payment and obtaining credential...');
         // Use temp storage to avoid conflicts with previous test runs
-        const tempStoragePath = path.join(os.tmpdir(), `zk-session-test-${Date.now()}`, 'credentials.json');
+        const tempStoragePath = path.join(os.tmpdir(), `zk-credential-test-${Date.now()}`, 'credentials.json');
         const client = new ZkSessionClient({
             strategy: 'time-bucketed',
             timeBucketSeconds: 60,
@@ -316,10 +316,9 @@ describe('End-to-End Flow', () => {
         console.log('Credential obtained:', {
             serviceId: storedCredential.serviceId,
             tier: storedCredential.tier,
-            maxPresentations: storedCredential.maxPresentations,
         });
 
-        // 5. Access Protected API with Authorization: ZKSession header
+        // 5. Access Protected API with zk_credential body presentation
         console.log('Accessing protected API with ZK proof...');
         const response = await client.makeAuthenticatedRequest(
             `http://localhost:${API_PORT}/api/whoami`,

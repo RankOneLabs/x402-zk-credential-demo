@@ -1,12 +1,12 @@
 /**
- * ZK Session Verification Middleware
+ * ZK Credential Verification Middleware
  * 
  * Verifies ZK proofs and enforces rate limits.
- * Compliant with x402 zk-session spec v0.1.0
+ * Compliant with x402 zk-credential spec v0.2.0
  * 
  * **Security Note (Replay Protection):**
- * Proofs are valid within a time window (60s past, 5s future) and could
- * theoretically be replayed within that window. However, replays use the
+ * Proofs are valid within a time window (±60s) and could theoretically be
+ * replayed within that window. However, replays use the
  * same origin_token and thus consume the same rate limit quota - an attacker
  * replaying your proof uses YOUR rate limit, not theirs.
  * 
@@ -22,19 +22,18 @@ import {
   bigIntToHex,
   addSchemePrefix,
   type Point,
-  type X402WithZKSessionResponse,
-  type ZKSessionError,
-  type ZKSessionErrorCode,
+  type X402WithZKCredentialResponse,
+  type ZKCredentialError,
+  type ZKCredentialErrorCode,
   ERROR_CODE_TO_STATUS,
 } from '@demo/crypto';
 import { RateLimiter, type RateLimitConfig } from './ratelimit.js';
-import { ZkVerifier, parseProofFromRequest } from './verifier.js';
+import { ZkVerifier } from './verifier.js';
 
 /**
  * Structured error types for payment processing
  */
 type PaymentErrorCode = 
-  | 'INVALID_PAYMENT_SIGNATURE'
   | 'INVALID_REQUEST_STRUCTURE'
   | 'PAYMENT_REJECTED'
   | 'FACILITATOR_UNAVAILABLE'
@@ -80,9 +79,9 @@ export interface ZkSessionConfig {
 /** Discriminated union for session verification results */
 export type SessionVerificationResult =
   | { valid: true; tier: number; originToken: string }
-  | { valid: false; errorCode: ZKSessionErrorCode; message?: string };
+  | { valid: false; errorCode: ZKCredentialErrorCode; message?: string };
 
-// Extend Express Request to include ZK session info
+// Extend Express Request to include ZK credential info
 declare global {
   namespace Express {
     interface Request {
@@ -118,12 +117,12 @@ export class ZkSessionMiddleware {
   }
 
   /**
-   * Get scheme-prefixed public key for 402 response
+   * Get suite-prefixed public key for 402 response
    */
   private getFacilitatorPubkeyPrefixed(): string {
     const xHex = this.config.issuerPubkey.x.toString(16).padStart(64, '0');
     const yHex = this.config.issuerPubkey.y.toString(16).padStart(64, '0');
-    return addSchemePrefix('pedersen-schnorr-bn254', `0x04${xHex}${yHex}`);
+    return addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', `0x04${xHex}${yHex}`);
   }
 
   /**
@@ -147,17 +146,17 @@ export class ZkSessionMiddleware {
   }
 
   /**
-   * Build x402 Payment Required response (spec §6)
+   * Build x402 Payment Required response (spec §7)
    * Uses @x402/core PaymentRequired format with accepts[] array
    */
-  private build402Response(resourceUrl: string): X402WithZKSessionResponse {
+  private build402Response(resourceUrl: string): X402WithZKCredentialResponse {
     const paymentReqs = this.buildPaymentRequirements();
     
     return {
       x402Version: 2,
       resource: {
         url: resourceUrl,
-        description: this.config.resourceDescription ?? 'ZK Session protected resource',
+        description: this.config.resourceDescription ?? 'ZK Credential protected resource',
         mimeType: 'application/json',
       },
       accepts: [
@@ -168,9 +167,9 @@ export class ZkSessionMiddleware {
         },
       ],
       extensions: {
-        zk_session: {
-          version: '0.1',
-          schemes: ['pedersen-schnorr-bn254'],
+        zk_credential: {
+          version: '0.2.0',
+          credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
           facilitator_pubkey: this.getFacilitatorPubkeyPrefixed(),
           facilitator_url: this.config.facilitatorUrl,
         },
@@ -179,9 +178,9 @@ export class ZkSessionMiddleware {
   }
 
   /**
-   * Build ZK session error response (spec §13)
+   * Build ZK credential error response (spec §14)
    */
-  private buildErrorResponse(code: ZKSessionErrorCode, message?: string): ZKSessionError {
+  private buildErrorResponse(code: ZKCredentialErrorCode, message?: string): ZKCredentialError {
     return { error: code, message };
   }
 
@@ -197,52 +196,41 @@ export class ZkSessionMiddleware {
   }
 
   /**
-   * Express middleware for ZK session verification (spec §11)
+   * Express middleware for ZK credential verification (spec §11)
    */
   middleware() {
     return async (req: Request, res: Response, next: NextFunction) => {
       // 0. Handle Payment Settlement (Mediated Flow)
-      const paymentSig = req.get('PAYMENT-SIGNATURE');
-      if (paymentSig) {
+      const paymentBody = req.body as Record<string, unknown> | undefined;
+      const payment = (paymentBody as { payment?: unknown } | undefined)?.payment;
+      const zkCredential = (paymentBody as { extensions?: { zk_credential?: { commitment?: string } } } | undefined)
+        ?.extensions?.zk_credential;
+      if (payment) {
         try {
-          console.log('[ZkSession] Processing payment signature...');
-          
-          let payload: Record<string, unknown>;
-          try {
-            const payloadStr = Buffer.from(paymentSig, 'base64').toString('utf-8');
-            payload = JSON.parse(payloadStr);
-          } catch {
-            throw new PaymentError(
-              'INVALID_PAYMENT_SIGNATURE',
-              400,
-              'Malformed payment signature: unable to parse'
-            );
+          console.log('[ZkSession] Processing payment body...');
+
+          if (!paymentBody || typeof paymentBody !== 'object') {
+            throw new PaymentError('INVALID_REQUEST_STRUCTURE', 400, 'Missing payment body');
           }
 
-          // Validate zk_session location per spec §7.2
-          // Only accept extensions.zk_session - reject ambiguous structures
-          if (payload.zk_session && (payload as { extensions?: { zk_session?: unknown } }).extensions?.zk_session) {
+          if (!zkCredential?.commitment) {
             throw new PaymentError(
               'INVALID_REQUEST_STRUCTURE',
               400,
-              'Ambiguous request: zk_session found in both root and extensions'
-            );
-          }
-          const zkSessionData = (payload as { extensions?: { zk_session?: { commitment?: string } } }).extensions?.zk_session;
-          if (!zkSessionData?.commitment) {
-            throw new PaymentError(
-              'INVALID_REQUEST_STRUCTURE',
-              400,
-              'Missing extensions.zk_session.commitment per spec §7.2'
+              'Missing extensions.zk_credential.commitment per spec §8.2'
             );
           }
 
           // Call Facilitator /settle
           // Reuse buildPaymentRequirements() to ensure consistency with 402 response
           const settleReq = {
-            payment: payload.payment,
+            payment,
             paymentRequirements: this.buildPaymentRequirements(),
-            zk_session: zkSessionData,
+            extensions: {
+              zk_credential: {
+                commitment: zkCredential.commitment,
+              },
+            },
           };
 
           let settleResp: globalThis.Response;
@@ -307,23 +295,31 @@ export class ZkSessionMiddleware {
             );
           }
 
-          // Validate zk_session.credential
-          if (!response.zk_session || typeof response.zk_session !== 'object') {
+          // Validate extensions.zk_credential.credential
+          if (!response.extensions || typeof response.extensions !== 'object') {
             throw new PaymentError(
               'FACILITATOR_ERROR',
               502,
-              'Settlement response missing zk_session'
+              'Settlement response missing extensions'
             );
           }
-          const zkSession = response.zk_session as Record<string, unknown>;
-          if (!zkSession.credential || typeof zkSession.credential !== 'object') {
+          const extensions = response.extensions as Record<string, unknown>;
+          if (!extensions.zk_credential || typeof extensions.zk_credential !== 'object') {
             throw new PaymentError(
               'FACILITATOR_ERROR',
               502,
-              'Settlement response missing zk_session.credential'
+              'Settlement response missing extensions.zk_credential'
             );
           }
-          const cred = zkSession.credential as Record<string, unknown>;
+          const zkCredExt = extensions.zk_credential as Record<string, unknown>;
+          if (!zkCredExt.credential || typeof zkCredExt.credential !== 'object') {
+            throw new PaymentError(
+              'FACILITATOR_ERROR',
+              502,
+              'Settlement response missing extensions.zk_credential.credential'
+            );
+          }
+          const cred = zkCredExt.credential as Record<string, unknown>;
 
           // Validate required credential fields
           if (typeof cred.tier !== 'number') {
@@ -336,27 +332,16 @@ export class ZkSessionMiddleware {
 
           // Construct X402PaymentResponse
           const clientResp = {
-            x402Version: 2,
-            payment_receipt: {
-              status: 'settled',
-              txHash: receipt.txHash,
-              amountUSDC: receipt.amountUSDC,
+            x402: {
+              payment_response: response.payment_receipt,
             },
-            zk_session: {
+            zk_credential: {
               credential: cred,
             },
           };
 
-          res.set('PAYMENT-RESPONSE', Buffer.from(JSON.stringify(clientResp)).toString('base64'));
-
-          // Grant access for this request
-          req.zkSession = {
-            tier: cred.tier as number,
-            originToken: 'payment-session', // Placeholder for payment-based session
-          };
-
-          console.log('[ZkSession] Payment settled, credential issued. Granting access.');
-          next();
+          console.log('[ZkSession] Payment settled, credential issued. Returning credential.');
+          res.status(200).json(clientResp);
           return;
 
         } catch (error) {
@@ -384,18 +369,14 @@ export class ZkSessionMiddleware {
       if (!result.valid) {
         // 402: Payment Required when no credentials provided (spec §6)
         // Prompts client to discover payment requirements and obtain credentials
-        if (!req.headers.authorization) {
+        const hasPresentation = !!(paymentBody && typeof paymentBody === 'object' && 'zk_credential' in paymentBody);
+        if (!hasPresentation) {
           const resourceUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
           res.status(402).json(this.build402Response(resourceUrl));
           return;
         }
 
         const status = ERROR_CODE_TO_STATUS[result.errorCode];
-
-        // 401: Add WWW-Authenticate header (spec §13)
-        if (status === 401) {
-          res.set('WWW-Authenticate', 'ZKSession schemes="pedersen-schnorr-bn254"');
-        }
 
         res.status(status).json(this.buildErrorResponse(result.errorCode, result.message));
         return;
@@ -425,74 +406,87 @@ export class ZkSessionMiddleware {
   }
 
   /**
-   * Parse Authorization header (spec §8.1)
-   * Format: Authorization: ZKSession <scheme>:<base64-proof>
+   * Parse zk_credential envelope from request body (spec §6.3)
    */
-  private parseAuthorizationHeader(req: Request): { scheme: string; proofB64: string } | null {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
+  private parseProofEnvelope(req: Request): {
+    suite: string;
+    kid?: string;
+    proofB64: string;
+    publicOutputs: { originToken: string; tier: number; expiresAt: number };
+  } | null {
+    const body = req.body as Record<string, unknown> | undefined;
+    const zkCredential = (body as { zk_credential?: Record<string, unknown> } | undefined)?.zk_credential;
+    if (!zkCredential || typeof zkCredential !== 'object') {
       return null;
     }
 
-    // Check for ZKSession prefix
-    if (!authHeader.startsWith('ZKSession ')) {
+    const suite = zkCredential.suite;
+    const kid = zkCredential.kid;
+    const proofB64 = zkCredential.proof;
+    const publicOutputs = zkCredential.public_outputs as Record<string, unknown> | undefined;
+
+    if (typeof suite !== 'string' || typeof proofB64 !== 'string' || !publicOutputs) {
       return null;
     }
 
-    const payload = authHeader.slice('ZKSession '.length);
-    const colonIdx = payload.indexOf(':');
-    if (colonIdx === -1) {
+    const originToken = publicOutputs.origin_token;
+    const tier = publicOutputs.tier;
+    const expiresAt = publicOutputs.expires_at;
+
+    if (typeof originToken !== 'string' || typeof tier !== 'number' || typeof expiresAt !== 'number') {
       return null;
     }
 
-    const scheme = payload.slice(0, colonIdx);
-    const proofB64 = payload.slice(colonIdx + 1);
-
-    return { scheme, proofB64 };
+    return {
+      suite,
+      kid: typeof kid === 'string' ? kid : undefined,
+      proofB64,
+      publicOutputs: { originToken, tier, expiresAt },
+    };
   }
 
   /**
-   * Verify a request's ZK session (spec §11)
+   * Verify a request's ZK credential (spec §15)
    * 
    * Verification flow:
-   * 1. Parse Authorization header for ZKSession scheme
-   * 2. If missing → return error (middleware will return 402)
-   * 3. Extract scheme prefix from proof
-   * 4. If unsupported scheme → 400 unsupported_zk_scheme
-   * 5. Construct public inputs: (service_id, current_time, origin_id, facilitator_pubkey)
-   * 6. Verify proof
-   * 7. If invalid → 401 invalid_zk_proof
-   * 8. Extract outputs: (origin_token, tier)
-   * 9. Check tier meets endpoint requirement
-   * 10. If insufficient → 403 tier_insufficient
-   * 11. Return success (rate limiting handled by middleware)
+   * 1. Parse request body for zk_credential
+   * 2. If missing → credential_missing
+   * 3. Check suite support
+   * 4. Construct public inputs: (service_id, current_time, origin_id, facilitator_pubkey)
+   * 5. Verify proof
+   * 6. Extract outputs: (origin_token, tier, expires_at)
+   * 7. If expired → credential_expired
+   * 8. Check tier meets endpoint requirement
+   * 9. Return success (rate limiting handled by middleware)
    */
   async verifyRequest(req: Request): Promise<SessionVerificationResult> {
-    // Step 1-2: Parse Authorization header
-    const authData = this.parseAuthorizationHeader(req);
-    if (!authData) {
-      // No authorization - will trigger 402 response
-      return { valid: false, errorCode: 'invalid_zk_proof', message: 'Missing Authorization header' };
+    // Step 1-2: Parse request body
+    const presentation = this.parseProofEnvelope(req);
+    if (!presentation) {
+      return { valid: false, errorCode: 'credential_missing', message: 'Missing zk_credential presentation' };
     }
 
-    // Step 3-4: Check scheme
-    if (authData.scheme !== 'pedersen-schnorr-bn254') {
-      return { valid: false, errorCode: 'unsupported_zk_scheme', message: `Unsupported scheme: ${authData.scheme}` };
+    // Step 3: Check suite
+    if (presentation.suite !== 'pedersen-schnorr-poseidon-ultrahonk') {
+      return { valid: false, errorCode: 'unsupported_suite', message: `Unsupported suite: ${presentation.suite}` };
     }
 
-    // Parse the proof from base64
-    const proofData = parseProofFromRequest(authData.proofB64);
-    if (!proofData) {
-      return { valid: false, errorCode: 'invalid_zk_proof', message: 'Invalid proof format' };
+    const proofBytes = Buffer.from(presentation.proofB64, 'base64');
+    if (proofBytes.length === 0) {
+      return { valid: false, errorCode: 'invalid_proof', message: 'Invalid proof encoding' };
     }
+
+    const originId = this.computeOriginId(req);
+    const currentTime = BigInt(Math.floor(Date.now() / 1000));
 
     // Skip proof verification in development mode
     if (this.config.skipProofVerification) {
       console.log(`[ZkSession] Skipping proof verification (dev mode)`);
-      // In dev mode, extract tier and originToken from publicInputs (outputs are at indices 5,6)
-      // Layout: [service_id, current_time, origin_id, issuer_pubkey_x, issuer_pubkey_y, origin_token, tier]
-      const tier = proofData.publicInputs[6] ? Number(BigInt(proofData.publicInputs[6])) : 0;
-      const originToken = proofData.publicInputs[5] ?? '0x0';
+      const { tier, originToken, expiresAt } = presentation.publicOutputs;
+
+      if (expiresAt < Number(currentTime - 60n)) {
+        return { valid: false, errorCode: 'credential_expired', message: 'Credential expired' };
+      }
 
       // Still check minimum tier requirement even in skip mode
       if (tier < (this.config.minTier ?? 0)) {
@@ -502,89 +496,74 @@ export class ZkSessionMiddleware {
       return { valid: true, tier, originToken };
     }
 
-    // Step 5: Compute expected origin_id for this endpoint
-    const originId = this.computeOriginId(req);
-    const currentTime = BigInt(Math.floor(Date.now() / 1000));
-
-    // Build expected public inputs
-    // Order: service_id, current_time, origin_id, issuer_pubkey_x, issuer_pubkey_y
-    const expectedPublicInputs = [
+    const publicInputs = [
       bigIntToHex(this.config.serviceId),
       bigIntToHex(currentTime),
       bigIntToHex(originId),
       bigIntToHex(this.config.issuerPubkey.x),
       bigIntToHex(this.config.issuerPubkey.y),
+      presentation.publicOutputs.originToken,
+      bigIntToHex(BigInt(presentation.publicOutputs.tier)),
+      bigIntToHex(BigInt(presentation.publicOutputs.expiresAt)),
     ];
 
-    // Verify the public inputs match (first 5 elements)
-    for (let i = 0; i < 5; i++) {
-      if (proofData.publicInputs[i] !== expectedPublicInputs[i]) {
-        // Allow asymmetric time drift for current_time:
-        // - Past: up to 60s (network latency, processing time)
-        // - Future: up to 5s (clock skew only, prevents pre-generation)
-        if (i === 1) {
-          const proofTime = BigInt(proofData.publicInputs[i] ?? '0x0');
-          const isPast = proofTime < currentTime;
-          const drift = isPast
-            ? currentTime - proofTime
-            : proofTime - currentTime;
-          const maxDrift = isPast ? 60n : 5n;
-          if (drift <= maxDrift) {
-            continue; // Accept with allowed time drift
-          }
-          // Time check failure could indicate expired proof - check if too old
-          if (isPast && drift > 60n) {
-            return { valid: false, errorCode: 'proof_expired', message: 'Proof timestamp too old' };
-          }
-        }
-        return {
-          valid: false,
-          errorCode: 'invalid_zk_proof',
-          message: `Public input mismatch at index ${i}`
-        };
-      }
-    }
+    const proofData = {
+      proof: new Uint8Array(proofBytes),
+      publicInputs,
+    };
 
     // Step 6-7: Verify the ZK proof
     try {
       const result = await this.verifier.verify(proofData);
 
       if (!result.valid) {
-        return { valid: false, errorCode: 'invalid_zk_proof', message: result.error ?? 'Proof verification failed' };
+        return { valid: false, errorCode: 'invalid_proof', message: result.error ?? 'Proof verification failed' };
       }
 
       // Step 8: Extract outputs (origin_token, tier)
       const originToken = result.outputs?.originToken ?? '';
       const tier = result.outputs?.tier ?? 0;
+      const expiresAt = result.outputs?.expiresAt ?? 0;
+
+      if (expiresAt < Number(currentTime - 60n)) {
+        return { valid: false, errorCode: 'credential_expired', message: 'Credential expired' };
+      }
 
       // Step 10-11: Check minimum tier requirement
       if (tier < (this.config.minTier ?? 0)) {
         return { valid: false, errorCode: 'tier_insufficient', message: `Tier ${tier} below minimum ${this.config.minTier}` };
       }
 
-      console.log(`[ZkSession] Proof verified for tier ${tier}, origin: ${originId.toString(16).slice(0, 16)}...`);
-
       return { valid: true, tier, originToken };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return { valid: false, errorCode: 'invalid_zk_proof', message: `Proof verification failed: ${message}` };
+      return { valid: false, errorCode: 'invalid_proof', message: `Proof verification failed: ${message}` };
     }
   }
 
   /**
-   * Compute origin_id for a request
-   * Recommended normalization: poseidon(METHOD, path_without_query, host)
-   * For simplicity in demo: hash of pathname only (strips query params)
+  * Compute origin_id for a request
+  * Spec normalization: poseidon(stringToField(scheme + "://" + host + path))
+  * - scheme/host lowercase
+  * - path preserves case, strips trailing slash
+  * - query excluded
    */
   private computeOriginId(req: Request): bigint {
-    // Use originalUrl to get the full path (req.url is stripped in mounted routers)
-    const url = new URL(req.originalUrl, `http://${req.headers.host}`);
-    // Normalize: strip query params, strip trailing slashes, lowercase
-    let pathname = url.pathname.toLowerCase();
+    const url = new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
+
+    const scheme = url.protocol.replace(':', '').toLowerCase();
+    const hostname = url.hostname.toLowerCase();
+    const port = url.port;
+    const defaultPort = scheme === 'https' ? '443' : scheme === 'http' ? '80' : '';
+    const host = port && port !== defaultPort ? `${hostname}:${port}` : hostname;
+
+    let pathname = url.pathname;
     if (pathname.endsWith('/') && pathname.length > 1) {
       pathname = pathname.slice(0, -1);
     }
-    return stringToField(pathname);
+
+    const canonicalOrigin = `${scheme}://${host}${pathname}`;
+    return stringToField(canonicalOrigin);
   }
 
   /**

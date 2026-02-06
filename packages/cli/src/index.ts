@@ -1,7 +1,7 @@
 /**
  * @demo/cli
  * 
- * CLI client for ZK Session credentials.
+ * CLI client for ZK credentials.
  */
 
 export { ZkSessionClient, type ClientConfig, type PresentationStrategy } from './client.js';

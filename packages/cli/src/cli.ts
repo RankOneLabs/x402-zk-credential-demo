@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * ZK Session CLI
+ * ZK Credential CLI
  * 
- * Command-line interface for managing ZK session credentials.
+ * Command-line interface for managing ZK credentials.
  */
 
 import { Command } from 'commander';
@@ -11,8 +11,8 @@ import { ZkSessionClient, type PresentationStrategy } from './client.js';
 const program = new Command();
 
 program
-  .name('zk-session')
-  .description('CLI for ZK Session credentials')
+  .name('zk-credential')
+  .description('CLI for ZK credentials')
   .version('0.1.0');
 
 // Credential commands
@@ -43,7 +43,7 @@ credentialCmd
       console.log(`Service: ${cred.serviceId}`);
       console.log(`  Tier: ${cred.tier}`);
       console.log(`  Status: ${status?.status}`);
-      console.log(`  Used: ${cred.presentationCount}/${cred.maxPresentations}`);
+      console.log(`  Used: ${cred.presentationCount}/${cred.presentationBudget}`);
       console.log(`  Expires in: ${Math.round((status?.expiresIn ?? 0) / 60)} minutes`);
       console.log(`  Issuer: ${cred.issuerUrl}`);
       console.log();

@@ -1,13 +1,12 @@
 /**
  * Types for credential issuance
- * Compliant with x402 zk-session spec v0.1.0
+ * Compliant with x402 zk-credential spec v0.2.0
  */
 
 import type {
   X402PaymentRequest,
   X402PaymentResponse,
   CredentialWireFormat,
-  ZKSessionScheme,
   PaymentPayload,
   PaymentRequirements,
 } from '@demo/crypto';
@@ -16,7 +15,7 @@ import type {
 export type { X402PaymentRequest, X402PaymentResponse, CredentialWireFormat, PaymentPayload, PaymentRequirements };
 
 /** 
- * Settlement request (spec §7.2)
+ * Settlement request (spec §8.3)
  * x402 v2 format with signed payment payload
  */
 export interface SettlementRequest {
@@ -24,15 +23,17 @@ export interface SettlementRequest {
   payment: PaymentPayload;
   /** Payment requirements from the 402 response */
   paymentRequirements: PaymentRequirements;
-  /** ZK session extension with scheme-prefixed commitment */
-  zk_session: {
-    /** Scheme-prefixed commitment: "pedersen-schnorr-bn254:0x..." */
-    commitment: string;
+  /** ZK credential extension with suite-prefixed commitment */
+  extensions: {
+    zk_credential: {
+      /** Suite-prefixed commitment: "pedersen-schnorr-poseidon-ultrahonk:0x..." */
+      commitment: string;
+    };
   };
 }
 
 /** 
- * Settlement response (spec §7.3)
+ * Settlement response (spec §8.4)
  * Maps to X402PaymentResponse
  */
 export interface SettlementResponse {
@@ -42,9 +43,11 @@ export interface SettlementResponse {
     txHash?: string;
     amountUSDC: number;
   };
-  /** ZK session credential */
-  zk_session: {
-    credential: CredentialWireFormat;
+  /** ZK credential */
+  extensions: {
+    zk_credential: {
+      credential: CredentialWireFormat;
+    };
   };
 }
 

@@ -1,8 +1,8 @@
-# x402 ZK Session Demo
+# x402 ZK Credential Demo
 
 > ⚠️ **PROOF OF CONCEPT** - This is a demonstration project for educational and research purposes only. It is NOT production-ready and should NOT be used in any production environment. The cryptographic implementations have not been audited, and the security guarantees are not verified.
 
-**Compliant with [x402 zk-session spec v0.1.0](./zk-session-spec.md)**
+**Compliant with [x402 zk-credential spec v0.2.0](./zk-credential-spec.md)**
 
 Anonymous session credentials for x402 APIs using zero-knowledge proofs.
 
@@ -11,7 +11,7 @@ Anonymous session credentials for x402 APIs using zero-knowledge proofs.
 This demo implements a ZK credential system that replaces x402's SIWx identity layer with unlinkable ZK proofs:
 
 - **SIWx proves:** "I am wallet 0xABC" (linkable)
-- **ZK Session proves:** "I'm a member of the paid-users set" (unlinkable)
+- **ZK Credential proves:** "I'm a member of the paid-users set" (unlinkable)
 
 ## Architecture (spec §4, §5)
 
@@ -22,7 +22,7 @@ This demo implements a ZK credential system that replaces x402's SIWx identity l
 └──────┬──────┘      └──────┬──────┘      └──────┬──────┘
        │                    │                    │
        │                    │◄───────────────────┤ 1. GET /resource
-       │                    │───────────────────►│ 2. 402 + zk_session
+      │                    │───────────────────►│ 2. 402 + zk_credential
        │                    │                    │
        │                    │◄───────────────────┤ 3. Sign EIP-3009
        │◄───────────────────┤ (proxy settle)     │
@@ -31,8 +31,8 @@ This demo implements a ZK credential system that replaces x402's SIWx identity l
        │───────────────────►│                    │
        │                    │───────────────────►│ 6. 200 OK + credential
        │                    │                    │
-       │                    │◄───────────────────┤ 7. Authorization:
-       │                    │                    │    ZKSession proof
+      │                    │◄───────────────────┤ 7. POST /resource
+      │                    │                    │    Body: ZK proof
        │                    │───────────────────►│ 8. 200 OK
 ```
 
@@ -124,36 +124,51 @@ npm run demo --workspace=@demo/cli
 
 The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
-1. **Discovery:** Client requests protected resource → receives 402 with `x402.extensions.zk_session`
-2. **Settlement:** Client sends payment + commitment to `/settle` → receives credential
-3. **Presentation:** Client makes API requests with `Authorization: ZKSession` header
+1. **Discovery:** Client requests protected resource → receives 402 with `extensions.zk_credential`
+2. **Settlement:** Client sends payment + commitment (body) → receives credential
+3. **Presentation:** Client POSTs proof in request body (`zk_credential` envelope)
 4. **Verification:** Server verifies ZK proof and applies rate limiting
 
-### 402 Response Format (spec §6)
+### 402 Response Format (spec §7)
 
 ```json
 {
-  "x402": {
-    "payment_requirements": {
+  "x402Version": 2,
+  "accepts": [
+    {
+      "scheme": "exact",
+      "network": "eip155:8453",
       "amount": "100000",
-      "asset": "USDC",
-      "facilitator": "http://localhost:3001/settle"
-    },
-    "extensions": {
-      "zk_session": {
-        "version": "0.1",
-        "schemes": ["pedersen-schnorr-bn254"],
-        "facilitator_pubkey": "pedersen-schnorr-bn254:0x04..."
-      }
+      "payTo": "0x1234...",
+      "asset": "0xABCD..."
+    }
+  ],
+  "extensions": {
+    "zk_credential": {
+      "version": "0.2.0",
+      "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
+      "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04..."
     }
   }
 }
 ```
 
-### Authorization Header (spec §8.1)
+### Proof Presentation Body (spec §6.3)
 
-```
-Authorization: ZKSession pedersen-schnorr-bn254:<base64-proof>
+```json
+{
+  "zk_credential": {
+    "version": "0.2.0",
+    "suite": "pedersen-schnorr-poseidon-ultrahonk",
+    "kid": "key-2026-02",
+    "proof": "<base64-proof>",
+    "public_outputs": {
+      "origin_token": "0x...",
+      "tier": 1,
+      "expires_at": 1707004800
+    }
+  }
+}
 ```
 
 ## Privacy Budget
