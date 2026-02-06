@@ -1,7 +1,7 @@
 /**
- * API Server with ZK Session Protection
+ * API Server with ZK Credential Protection
  * 
- * Example server demonstrating ZK session verification.
+ * Example server demonstrating ZK credential verification.
  */
 
 import express, { type Request, type Response } from 'express';
@@ -9,61 +9,61 @@ import cors from 'cors';
 import path from 'node:path';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { ZkSessionMiddleware, type ZkSessionConfig } from './middleware.js';
+import { ZkCredentialMiddleware, type ZkCredentialConfig } from './middleware.js';
 import { hexToBigInt } from '@demo/crypto';
 
 export interface ApiServerConfig {
   port: number;
-  zkSession: ZkSessionConfig;
+  zkCredential: ZkCredentialConfig;
   corsOrigins?: string[];
 }
 
 export function createApiServer(config: ApiServerConfig) {
   const app = express();
-  const zkSession = new ZkSessionMiddleware(config.zkSession);
+  const zkCredential = new ZkCredentialMiddleware(config.zkCredential);
 
   // Middleware
   app.use(cors({
     origin: config.corsOrigins ?? '*',
     exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
   }));
-  app.use(express.json());
+  app.use(express.json({ limit: '64kb' }));
 
   // Health check (public)
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'zk-session-api' });
+    res.json({ status: 'ok', service: 'zk-credential-api' });
   });
 
   // Stats (public)
   app.get('/stats', (_req, res) => {
     res.json({
-      ...zkSession.getStats(),
+      ...zkCredential.getStats(),
       uptime: process.uptime(),
     });
   });
 
   // Protected routes
   const protectedRouter = express.Router();
-  protectedRouter.use(zkSession.middleware());
+  protectedRouter.use(zkCredential.middleware());
 
   // Example protected endpoint
-  protectedRouter.get('/whoami', (req: Request, res: Response) => {
-    const token = req.zkSession?.originToken ?? '';
+  protectedRouter.all('/whoami', (req: Request, res: Response) => {
+    const token = req.zkCredential?.originToken ?? '';
     const truncatedToken = token.length > 16 ? `${token.slice(0, 16)}...` : token;
 
     res.json({
-      tier: req.zkSession?.tier,
+      tier: req.zkCredential?.tier,
       originToken: truncatedToken,
       message: 'You have valid ZK credentials!',
     });
   });
 
   // Chat endpoint (simulates AI API)
-  protectedRouter.post('/chat', (req: Request, res: Response) => {
+  protectedRouter.all('/chat', (req: Request, res: Response) => {
     const { message } = req.body;
 
     // Tier-based response
-    const tier = req.zkSession?.tier ?? 0;
+    const tier = req.zkCredential?.tier ?? 0;
     const responses: Record<number, string> = {
       0: `[Basic] Echo: ${message}`,
       1: `[Pro] Processing: ${message}`,
@@ -78,8 +78,8 @@ export function createApiServer(config: ApiServerConfig) {
   });
 
   // Data endpoint
-  protectedRouter.get('/data', (req: Request, res: Response) => {
-    const tier = req.zkSession?.tier ?? 0;
+  protectedRouter.all('/data', (req: Request, res: Response) => {
+    const tier = req.zkCredential?.tier ?? 0;
 
     // Return more data for higher tiers
     const data = {
@@ -101,14 +101,18 @@ export function createApiServer(config: ApiServerConfig) {
 
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: express.NextFunction) => {
-    console.error('[API] Error:', err.message);
+    const isJsonParseError = err instanceof SyntaxError && 'body' in err;
+    const status = isJsonParseError ? 400 : 500;
+    const message = isJsonParseError ? 'Invalid JSON' : err.message;
+
+    console.error('[API] Error:', message);
 
     // Don't send response if headers already sent (prevents crash on streaming errors)
     if (res.headersSent) {
       return;
     }
 
-    res.status(500).json({ error: err.message });
+    res.status(status).json({ error: message });
   });
 
   let httpServer: http.Server | null = null;
@@ -121,8 +125,8 @@ export function createApiServer(config: ApiServerConfig) {
         httpServer = http.createServer({ maxHeaderSize: 65536 }, app);
         httpServer.listen(config.port, () => {
           console.log(`[API] Server running on port ${config.port}`);
-          console.log(`[API] Service ID: ${config.zkSession.serviceId}`);
-          console.log(`[API] Rate limit: ${config.zkSession.rateLimit.maxRequestsPerToken} requests per ${config.zkSession.rateLimit.windowSeconds}s`);
+          console.log(`[API] Service ID: ${config.zkCredential.serviceId}`);
+          console.log(`[API] Rate limit: ${config.zkCredential.rateLimit.maxRequestsPerToken} requests per ${config.zkCredential.rateLimit.windowSeconds}s`);
           resolve();
         });
       });
@@ -173,9 +177,9 @@ if (isMain) {
 
   const config: ApiServerConfig = {
     port: parseInt(process.env.PORT ?? '3002'),
-    zkSession: {
+    zkCredential: {
       serviceId: BigInt(process.env.SERVICE_ID ?? '1'),
-      issuerPubkey: {
+      facilitatorPubkey: {
         x: hexToBigInt(pubkeyX),
         y: hexToBigInt(pubkeyY),
       },

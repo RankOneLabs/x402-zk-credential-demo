@@ -45,7 +45,7 @@ describe('ZkVerifier', () => {
       // First use
       const result1 = await verifier.verify({
         proof: new Uint8Array([1, 2, 3]),
-        publicInputs: ['0x1', '0x2', '0x3', '0x4', '0x5', '0xabc', '0x1'],
+        publicInputs: ['0x1', '0x2', '0x3', '0x4', '0x5', '0xabc', '0x1', '0x64'],
       });
       expect(result1.valid).toBe(true);
       
@@ -55,7 +55,7 @@ describe('ZkVerifier', () => {
       // Re-use (should re-initialize automatically)
       const result2 = await verifier.verify({
         proof: new Uint8Array([1, 2, 3]),
-        publicInputs: ['0x1', '0x2', '0x3', '0x4', '0x5', '0xdef', '0x2'],
+        publicInputs: ['0x1', '0x2', '0x3', '0x4', '0x5', '0xdef', '0x2', '0x65'],
       });
       expect(result2.valid).toBe(true);
       expect(result2.outputs?.originToken).toBe('0xdef');
@@ -72,6 +72,7 @@ describe('ZkVerifier', () => {
           '0x1', '0x2', '0x3', '0x4', '0x5',  // 5 public inputs
           '0xabc',  // origin_token
           '0x1',    // tier
+          '0x64',   // expires_at
         ],
       });
       
@@ -85,7 +86,7 @@ describe('ZkVerifier', () => {
       
       const result = await verifier.verify({
         proof: new Uint8Array([1, 2, 3]),
-        publicInputs: ['0x1', '0x2', '0x3', '0x4', '0x5', '0xdef', '0x2'],
+        publicInputs: ['0x1', '0x2', '0x3', '0x4', '0x5', '0xdef', '0x2', '0x65'],
       });
       
       expect(result.outputs?.tier).toBe(2);
@@ -101,7 +102,7 @@ describe('ZkVerifier', () => {
       
       expect(result.valid).toBe(false);
       expect(result.error).toContain('Invalid publicInputs length');
-      expect(result.error).toContain('expected >= 7');
+      expect(result.error).toContain('expected >= 8');
       expect(result.error).toContain('got 3');
     });
 
@@ -110,7 +111,7 @@ describe('ZkVerifier', () => {
       
       const result = await verifier.verify({
         proof: new Uint8Array([1, 2, 3]),
-        publicInputs: ['0x1', '0x2', '0x3', '0x4', '0x5', '0xabc', 'not-hex'],
+        publicInputs: ['0x1', '0x2', '0x3', '0x4', '0x5', '0xabc', 'not-hex', '0x64'],
       });
       
       expect(result.valid).toBe(false);

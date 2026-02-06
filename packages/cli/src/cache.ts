@@ -13,6 +13,8 @@ export interface CachedProof {
   tier: number;
   /** Expiration timestamp */
   expiresAt: number;
+  /** The current_time used when generating the proof (public input) */
+  currentTime: number;
   /** Cache key components for debugging */
   meta: {
     serviceId: string;
@@ -25,11 +27,11 @@ export interface CachedProof {
 export class ProofCache {
   private cache: Map<string, CachedProof> = new Map();
   private readonly maxSize: number;
-  
+
   constructor(maxSize = 100) {
     this.maxSize = maxSize;
   }
-  
+
   /**
    * Compute cache key
    */
@@ -41,7 +43,7 @@ export class ProofCache {
   ): string {
     return `${serviceId}:${originId}:${presentationIndex}:${timeBucket ?? 'none'}`;
   }
-  
+
   /**
    * Get cached proof if valid
    */
@@ -53,20 +55,20 @@ export class ProofCache {
   ): CachedProof | undefined {
     const key = this.computeKey(serviceId, originId, presentationIndex, timeBucket);
     const cached = this.cache.get(key);
-    
+
     if (!cached) {
       return undefined;
     }
-    
+
     // Check expiration
     if (cached.expiresAt < Math.floor(Date.now() / 1000)) {
       this.cache.delete(key);
       return undefined;
     }
-    
+
     return cached;
   }
-  
+
   /**
    * Store proof in cache
    */
@@ -78,25 +80,25 @@ export class ProofCache {
     timeBucket?: number
   ): void {
     const key = this.computeKey(serviceId, originId, presentationIndex, timeBucket);
-    
+
     // Prune if at capacity
     if (this.cache.size >= this.maxSize) {
       this.prune();
     }
-    
+
     this.cache.set(key, {
       ...proof,
       meta: { serviceId, originId, presentationIndex, timeBucket },
     });
   }
-  
+
   /**
    * Remove expired entries and oldest if still at capacity
    */
   prune(): number {
     const now = Math.floor(Date.now() / 1000);
     let pruned = 0;
-    
+
     // Remove expired
     for (const [key, value] of this.cache) {
       if (value.expiresAt < now) {
@@ -104,7 +106,7 @@ export class ProofCache {
         pruned++;
       }
     }
-    
+
     // If still at capacity, remove oldest (first inserted)
     while (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
@@ -115,17 +117,17 @@ export class ProofCache {
         break;
       }
     }
-    
+
     return pruned;
   }
-  
+
   /**
    * Clear all cached proofs
    */
   clear(): void {
     this.cache.clear();
   }
-  
+
   /**
    * Get cache statistics
    */

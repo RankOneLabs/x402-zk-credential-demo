@@ -1,7 +1,7 @@
 {
   "name": "@demo/crypto",
   "version": "0.1.0",
-  "description": "Cryptographic primitives for ZK Session (Pedersen, Schnorr, Poseidon)",
+  "description": "Cryptographic primitives for ZK Credential (Pedersen, Schnorr, Poseidon)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

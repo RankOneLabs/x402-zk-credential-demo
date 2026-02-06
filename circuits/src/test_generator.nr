@@ -67,7 +67,7 @@ fn test_poseidon7() {
     let inputs = [
         1,    // service_id
         1,    // tier
-        1000, // max_presentations
+        1000, // presentation_budget
         1706547800, // issued_at
         1800000000, // expires_at
         1174064385289564629069614027811202315496463851600307037813143587535931871049, // commitment_x

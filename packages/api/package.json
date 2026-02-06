@@ -1,7 +1,7 @@
 {
   "name": "@demo/api",
   "version": "0.1.0",
-  "description": "ZK Session API server with proof verification and rate limiting",
+  "description": "ZK Credential API server with proof verification and rate limiting",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

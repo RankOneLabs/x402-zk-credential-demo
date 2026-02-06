@@ -1,5 +1,5 @@
-// x402 ZK Session Credential Circuit
-// Proves: "I hold a valid credential for this service" while only revealing the credential's tier (and origin token) publicly, not the full credential
+// x402 ZK Credential Circuit
+// Proves: "I hold a valid credential for this service" while only revealing the credential's tier, expiry, and origin token publicly
 
 mod pedersen;
 mod schnorr;
@@ -15,13 +15,13 @@ fn main(
     service_id: pub Field,
     current_time: pub Field,
     origin_id: pub Field,
-    issuer_pubkey_x: pub Field,
-    issuer_pubkey_y: pub Field,
+    facilitator_pubkey_x: pub Field,
+    facilitator_pubkey_y: pub Field,
     
     // === Private inputs: Credential ===
     cred_service_id: Field,
     cred_tier: Field,
-    cred_max_presentations: Field,
+    cred_presentation_budget: Field,
     cred_issued_at: Field,
     cred_expires_at: Field,
     cred_commitment_x: Field,
@@ -39,8 +39,8 @@ fn main(
     
     // === Private inputs: Presentation context ===
     presentation_index: Field,
-) -> pub (Field, Field) {
-    // Returns: (origin_token, tier)
+) -> pub (Field, Field, Field) {
+    // Returns: (origin_token, tier, expires_at)
     
     // 1. Verify Pedersen commitment opens correctly
     //    C = nullifier_seed * G + blinding_factor * H
@@ -56,18 +56,18 @@ fn main(
     assert(utils::field_gte(cred_expires_at, current_time), "Credential expired");
     
     // 4. Verify presentation index is within bounds
-    assert(utils::field_lt(presentation_index, cred_max_presentations), "Presentation index out of bounds");
+    assert(utils::field_lt(presentation_index, cred_presentation_budget), "Presentation index out of bounds");
     
     // 5. Compute message hash for signature verification
     // We split 7 inputs into 4 and 3 to ensure compatibility with JS poseidon-lite
-    let h1 = bn254::hash_4([cred_service_id, cred_tier, cred_max_presentations, cred_issued_at]);
+    let h1 = bn254::hash_4([cred_service_id, cred_tier, cred_presentation_budget, cred_issued_at]);
     let h2 = bn254::hash_3([cred_expires_at, cred_commitment_x, cred_commitment_y]);
     let msg = bn254::hash_2([h1, h2]);
     
     // 6. Verify Schnorr signature
     let sig_valid = schnorr::verify(
-        issuer_pubkey_x,
-        issuer_pubkey_y,
+        facilitator_pubkey_x,
+        facilitator_pubkey_y,
         msg,
         sig_r_x,
         sig_r_y,
@@ -79,8 +79,8 @@ fn main(
     // 7. Derive origin-bound token for rate limiting
     let origin_token = bn254::hash_3([nullifier_seed, origin_id, presentation_index]);
     
-    // 8. Return tier for access control
-    (origin_token, cred_tier)
+    // 8. Return tier and expiry for access control
+    (origin_token, cred_tier, cred_expires_at)
 }
 
 #[test]

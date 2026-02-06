@@ -1,6 +1,6 @@
 # @demo/crypto
 
-Cryptographic primitives for ZK session credentials. Must match Noir circuit implementations exactly.
+Cryptographic primitives for ZK credential operations. Must match Noir circuit implementations exactly.
 
 ## Primitives
 

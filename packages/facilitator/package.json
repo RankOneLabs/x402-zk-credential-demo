@@ -1,7 +1,7 @@
 {
   "name": "@demo/facilitator",
   "version": "0.1.0",
-  "description": "ZK Session credential facilitator server with x402 payment verification",
+  "description": "ZK Credential facilitator server with x402 payment verification",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

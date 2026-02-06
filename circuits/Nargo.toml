@@ -1,5 +1,5 @@
 [package]
-name = "x402_zk_session"
+name = "x402_zk_credential"
 type = "bin"
 authors = ["Rank One Labs"]
 compiler_version = ">=1.0.0"

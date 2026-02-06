@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generate valid Prover.toml test data for the x402_zk_session circuit.
+ * Generate valid Prover.toml test data for the x402_zk_credential circuit.
  * Uses the fixed @demo/crypto package (Grumpkin/BN254 friendly).
  * Note: Grumpkin is a curve defined over the scalar field of BN254.
  */
@@ -24,7 +24,7 @@ const originId = 12345n;
 
 // Credential values
 const credTier = 1n;
-const credMaxPresentations = 1000n;
+const credPresentationBudget = 1000n;
 const credIssuedAt = currentTime - 1000n;  // Issued 1000s ago
 const credExpiresAt = currentTime + 86400n; // Expires in 1 day
 
@@ -46,7 +46,7 @@ async function main() {
   const message = poseidonHash7(
     serviceId,
     credTier,
-    credMaxPresentations,
+    credPresentationBudget,
     credIssuedAt,
     credExpiresAt,
     commitment.point.x,
@@ -68,13 +68,13 @@ async function main() {
   console.log(`service_id = "${serviceId}"`);
   console.log(`current_time = "${currentTime}"`);
   console.log(`origin_id = "${originId}"`);
-  console.log(`issuer_pubkey_x = "${publicKey.x}"`);
-  console.log(`issuer_pubkey_y = "${publicKey.y}"`);
+  console.log(`facilitator_pubkey_x = "${publicKey.x}"`);
+  console.log(`facilitator_pubkey_y = "${publicKey.y}"`);
   console.log('');
   console.log('# Private inputs: Credential');
   console.log(`cred_service_id = "${serviceId}"`);
   console.log(`cred_tier = "${credTier}"`);
-  console.log(`cred_max_presentations = "${credMaxPresentations}"`);
+  console.log(`cred_presentation_budget = "${credPresentationBudget}"`);
   console.log(`cred_issued_at = "${credIssuedAt}"`);
   console.log(`cred_expires_at = "${credExpiresAt}"`);
   console.log(`cred_commitment_x = "${commitment.point.x}"`);

@@ -1,8 +1,8 @@
 {
-  "name": "x402-zk-session-demo",
+  "name": "x402-zk-credential-demo",
   "version": "0.1.0",
   "private": true,
-  "description": "x402 ZK Session Demo - Proof of concept for anonymous API access with rate limiting (NOT FOR PRODUCTION)",
+  "description": "x402 ZK Credential Demo - Proof of concept for anonymous API access with rate limiting (NOT FOR PRODUCTION)",
   "type": "module",
   "workspaces": [
     "packages/*"

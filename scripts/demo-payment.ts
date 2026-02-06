@@ -138,7 +138,7 @@ async function main() {
   const { credential } = await credentialRes.json();
   console.log('\n   ✓ Credential obtained!');
   console.log(`   Tier: ${credential.tier}`);
-  console.log(`   Max Presentations: ${credential.maxPresentations}`);
+  console.log(`   Presentation Budget: ${credential.presentationBudget}`);
   console.log(`   Expires: ${new Date(credential.expiresAt * 1000).toLocaleString()}`);
 
   console.log('\n╔═══════════════════════════════════════════════════════════════╗');

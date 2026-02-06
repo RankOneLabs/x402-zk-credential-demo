@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
- * ZK Session CLI
+ * ZK Credential CLI
  * 
- * Command-line interface for managing ZK session credentials.
+ * Command-line interface for managing ZK credentials.
  */
 
 import { Command } from 'commander';
-import { ZkSessionClient, type PresentationStrategy } from './client.js';
+import { ZkCredentialClient, type PresentationStrategy } from './client.js';
 
 const program = new Command();
 
 program
-  .name('zk-session')
-  .description('CLI for ZK Session credentials')
+  .name('zk-credential')
+  .description('CLI for ZK credentials')
   .version('0.1.0');
 
 // Credential commands
@@ -28,7 +28,7 @@ credentialCmd
   .command('list')
   .description('List stored credentials')
   .action(() => {
-    const client = new ZkSessionClient();
+    const client = new ZkCredentialClient();
     const credentials = client.listCredentials();
 
     if (credentials.length === 0) {
@@ -43,7 +43,7 @@ credentialCmd
       console.log(`Service: ${cred.serviceId}`);
       console.log(`  Tier: ${cred.tier}`);
       console.log(`  Status: ${status?.status}`);
-      console.log(`  Used: ${cred.presentationCount}/${cred.maxPresentations}`);
+      console.log(`  Used: ${cred.presentationCount}/${cred.presentationBudget}`);
       console.log(`  Expires in: ${Math.round((status?.expiresIn ?? 0) / 60)} minutes`);
       console.log(`  Issuer: ${cred.issuerUrl}`);
       console.log();
@@ -55,7 +55,7 @@ credentialCmd
   .description('Check credential status')
   .option('--service <id>', 'Service ID (optional)')
   .action((options) => {
-    const client = new ZkSessionClient();
+    const client = new ZkCredentialClient();
     const status = client.getCredentialStatus(options.service);
 
     if (!status) {
@@ -74,7 +74,7 @@ credentialCmd
   .command('clear')
   .description('Clear all stored credentials')
   .action(() => {
-    const client = new ZkSessionClient();
+    const client = new ZkCredentialClient();
     client.clearCredentials();
     console.log('All credentials cleared.');
   });
@@ -89,7 +89,7 @@ program
   .option('--strategy <strategy>', 'Presentation strategy', 'time-bucketed')
   .option('--force-unlinkable', 'Force unlinkable request')
   .action(async (method: string, url: string, options) => {
-    const client = new ZkSessionClient({
+    const client = new ZkCredentialClient({
       strategy: options.strategy as PresentationStrategy,
     });
 

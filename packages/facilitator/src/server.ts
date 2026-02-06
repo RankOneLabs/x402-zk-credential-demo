@@ -2,7 +2,7 @@
  * Facilitator Express Server
  * 
  * HTTP server that issues credentials via REST API.
- * Compliant with x402 zk-session spec v0.1.0
+ * Compliant with x402 zk-credential spec v0.2.0
  */
 
 import express, { type Request, type Response, type NextFunction } from 'express';
@@ -30,7 +30,7 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
 
   // Health check
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'zk-session-facilitator' });
+    res.json({ status: 'ok', service: 'zk-credential-facilitator' });
   });
 
   // Get facilitator info (public key, tiers) - spec compliant format
@@ -39,25 +39,25 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
     res.json({
       service_id: config.serviceId.toString(),
       facilitator_pubkey: pubkeyPrefixed,
-      schemes: ['pedersen-schnorr-bn254'],
+      credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
       tiers: config.tiers.map(t => ({
         tier: t.tier,
         price_usdc: t.minAmountCents / 100,
-        max_presentations: t.maxPresentations,
+        presentation_budget: t.presentationBudget,
         duration_seconds: t.durationSeconds,
       })),
     });
   });
 
-  // Settlement endpoint (spec §7.2, §7.3)
+  // Settlement endpoint (spec §8.3, §8.4)
   // x402 v2 format with signed payment payload
   app.post('/settle', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const request = req.body as SettlementRequest;
 
       // Validate request structure
-      if (!request.zk_session?.commitment) {
-        res.status(400).json({ error: 'Missing zk_session.commitment' });
+      if (!request.extensions?.zk_credential?.commitment) {
+        res.status(400).json({ error: 'Missing extensions.zk_credential.commitment' });
         return;
       }
 
@@ -73,13 +73,13 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
 
       // Validate scheme prefix
       try {
-        const { scheme } = parseSchemePrefix(request.zk_session.commitment);
-        if (scheme !== 'pedersen-schnorr-bn254') {
-          res.status(400).json({ error: 'unsupported_zk_scheme', message: `Unsupported scheme: ${scheme}` });
+        const { scheme } = parseSchemePrefix(request.extensions.zk_credential.commitment);
+        if (scheme !== 'pedersen-schnorr-poseidon-ultrahonk') {
+          res.status(400).json({ error: 'unsupported_suite', message: `Unsupported suite: ${scheme}` });
           return;
         }
       } catch {
-        res.status(400).json({ error: 'Invalid commitment format: expected scheme-prefixed string' });
+        res.status(400).json({ error: 'Invalid commitment format: expected suite-prefixed string' });
         return;
       }
 
@@ -150,9 +150,9 @@ if (isMain) {
     secretKey: BigInt(process.env.FACILITATOR_SECRET_KEY ?? '0x1234567890abcdef'),
     allowMockPayments: process.env.ALLOW_MOCK_PAYMENTS === 'true',
     tiers: [
-      { minAmountCents: 1000, tier: 2, maxPresentations: 10000, durationSeconds: 30 * 24 * 60 * 60 }, // $10 = Enterprise
-      { minAmountCents: 100, tier: 1, maxPresentations: 1000, durationSeconds: 7 * 24 * 60 * 60 },   // $1 = Pro
-      { minAmountCents: 10, tier: 0, maxPresentations: 100, durationSeconds: 24 * 60 * 60 },         // $0.10 = Basic
+      { minAmountCents: 1000, tier: 2, presentationBudget: 10000, durationSeconds: 30 * 24 * 60 * 60 }, // $10 = Enterprise
+      { minAmountCents: 100, tier: 1, presentationBudget: 1000, durationSeconds: 7 * 24 * 60 * 60 },   // $1 = Pro
+      { minAmountCents: 10, tier: 0, presentationBudget: 100, durationSeconds: 24 * 60 * 60 },         // $0.10 = Basic
     ],
     // EVM payment configuration (if private key is set)
     ...(process.env.FACILITATOR_PRIVATE_KEY && {

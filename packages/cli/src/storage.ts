@@ -13,7 +13,7 @@ export interface StoredCredential {
   // Credential from issuer
   serviceId: string;
   tier: number;
-  maxPresentations: number;
+  presentationBudget: number;
   issuedAt: number;
   expiresAt: number;
   userCommitment: { x: string; y: string };
@@ -40,9 +40,7 @@ export class CredentialStorage {
   private data: StorageData;
 
   constructor(storagePath?: string) {
-    // Note: Directory name kept as '.zk-session' for backward compatibility
-    // with existing credential stores, even though packages use @demo/* scope
-    this.storagePath = storagePath ?? join(homedir(), '.zk-session', 'credentials.json');
+    this.storagePath = storagePath ?? join(homedir(), '.zk-credential', 'credentials.json');
     this.data = this.load();
   }
 

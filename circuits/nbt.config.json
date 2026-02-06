@@ -2,8 +2,8 @@
   "version": "1.0.0",
   "circuits": [
     {
-      "name": "x402_zk_session",
-      "displayName": "ZK Session Demo",
+      "name": "x402_zk_credential",
+      "displayName": "ZK Credential Demo",
       "path": ".",
       "description": "ZK proof of credential ownership with tier-based access",
       "constraintBudget": 100000,
