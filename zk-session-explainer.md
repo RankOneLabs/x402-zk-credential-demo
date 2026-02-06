@@ -35,7 +35,7 @@ To support replay prevention and usage constraints, the proof derives an `origin
 The server tracks `origin_token` values to enforce constraints (e.g., prevent reuse, rate limit per origin). The client can control linkability behavior by how it uses `presentation_index` and `origin_id` across requests/endpoints.
 
 ## Transport considerations
-Proof and credential artifacts can exceed common HTTP header limits (proof sizes around the ~10–20KB range have already caused integration failures). The extension therefore defines a body-based transport option and recommends avoiding “large header” designs for proofs.
+Proof and credential artifacts can exceed common HTTP header limits (proof sizes around the ~10–20KB range have already caused integration failures). The extension therefore defines a body-based transport option and recommends avoiding “large header” designs for proofs. In the body-based option, the proof and credential are carried in the HTTP request body (for example, as a JSON object with a dedicated `zk_session` field), while headers remain small and conventional. The exact wire format is defined in the x402 ZK Session Credentials transport section of the spec, which implementers SHOULD follow for interoperability.
 
 ## Status
 - A working demo exercises the flow (x402 payment → credential issuance → proof-based access).
