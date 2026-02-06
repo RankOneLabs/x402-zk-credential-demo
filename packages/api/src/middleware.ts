@@ -21,6 +21,7 @@ import {
   stringToField,
   bigIntToHex,
   addSchemePrefix,
+  poseidonHash3,
   type Point,
   type X402WithZKCredentialResponse,
   type ZKCredentialError,
@@ -612,7 +613,8 @@ export class ZkCredentialMiddleware {
     }
 
     const canonicalOrigin = `${scheme}://${host}${pathname}`;
-    return stringToField(canonicalOrigin);
+    const originField = stringToField(canonicalOrigin);
+    return poseidonHash3(originField, 0n, 0n);
   }
 
   /**
