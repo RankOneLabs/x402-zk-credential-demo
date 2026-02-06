@@ -43,7 +43,7 @@ x402-zk-credential-demo/
 - **Circuit Location:** All circuits are in `circuits/src/`
 - **Building:** Use `npm run circuit:build` or `cd circuits && nargo compile`
 - **Testing:** Use `npm run circuit:test` or `cd circuits && nargo test`
-- **Constraints:** Target <20K constraints. Current implementation: 97 ACIR opcodes.
+- **Circuit Complexity:** Target <20K constraints (original design goal). Current implementation: 97 ACIR opcodes which compile to ~4,189 constraints (expression width). ACIR opcodes are higher-level operations; the constraint count determines actual proving cost.
 - **Curve:** All operations use BN254 (alt_bn128) curve.
 
 ### 3. Cryptographic Primitives
