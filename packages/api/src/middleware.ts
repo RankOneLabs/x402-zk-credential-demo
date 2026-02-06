@@ -489,9 +489,9 @@ export class ZkCredentialMiddleware {
       ? BigInt(presentation.publicOutputs.currentTime)
       : serverTime;
 
-    // Validate the proof's current_time is within acceptable drift (±120 seconds)
+    // Validate the proof's current_time is within acceptable drift (±60 seconds)
     if (presentation.publicOutputs.currentTime != null) {
-      const MAX_TIME_DRIFT = 120n;
+      const MAX_TIME_DRIFT = 60n;
       const timeDiff = serverTime > proofTime ? serverTime - proofTime : proofTime - serverTime;
       if (timeDiff > MAX_TIME_DRIFT) {
         return { valid: false, errorCode: 'invalid_proof', message: `Proof time drift too large: ${timeDiff}s` };
