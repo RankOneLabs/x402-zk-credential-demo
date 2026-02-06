@@ -423,7 +423,8 @@ export class ZkCredentialClient {
       pathname = pathname.slice(0, -1);
     }
     const canonicalOrigin = `${scheme}://${host}${pathname}`;
-    const originId = stringToField(canonicalOrigin);
+    const originField = stringToField(canonicalOrigin);
+    const originId = poseidonHash3(originField, 0n, 0n);
 
     // Find credential for this service
     // For demo, use the first available credential
