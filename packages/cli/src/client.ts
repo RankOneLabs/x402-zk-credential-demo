@@ -472,7 +472,10 @@ export class ZkCredentialClient {
       if (!keys) {
         try {
           keys = await this.fetchWellKnownKeys(credential.facilitatorUrl);
-          this.knownKeys.set(credential.facilitatorUrl, keys);
+          // Only cache non-empty key lists to allow retries on transient failures
+          if (keys.length > 0) {
+            this.knownKeys.set(credential.facilitatorUrl, keys);
+          }
         } catch (e) {
           console.warn('[Client] Failed to fetch well-known keys:', e);
         }
