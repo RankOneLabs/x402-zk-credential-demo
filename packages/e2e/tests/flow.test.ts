@@ -324,7 +324,7 @@ describe('End-to-End Flow', () => {
         expect(storedCredential.tier).toBe(1);
         console.log('Credential obtained:', {
             serviceId: storedCredential.serviceId,
-            img: storedCredential.kid,
+            kid: storedCredential.kid,
             tier: storedCredential.tier,
         });
         expect(storedCredential.kid).toBe('e2e-test-key');
