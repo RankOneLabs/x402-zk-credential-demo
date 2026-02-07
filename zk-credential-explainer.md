@@ -6,7 +6,7 @@ Core x402 is intentionally simple: access is paid per request. A client requests
 When implementers want “pay once, redeem many times” (subscriptions, bundles, day passes, metered plans, etc.), they typically add a separate session mechanism on top: API keys, bearer tokens, or sign-in flows (often SIWx-style). These mechanisms introduce a stable identifier that links requests together. Even if the payment step is privacy-preserving (e.g., via z402), the added session layer can still make usage linkable.
 
 ## Approach
-ZK Credentials extend the x402 flow by adding an issuance step after settlement and a proof-based presentation step for subsequent requests.
+ZK Credentials extend the x402 flow by adding an issuance step after settlement and a proof-based authorization for subsequent requests.
 
 ### Phase 1: Standard x402 payment + credential issuance
 1. Client requests a protected resource and receives an x402 payment challenge.
@@ -17,10 +17,10 @@ The credential is short-lived and bounded, and includes:
 - `service_id` binding (prevents cross-service replay)
 - `tier` (access level derived from payment amount)
 - `issued_at`, `expires_at`
-- `presentation_budget` (maximum distinct presentations)
+- `identity_budget` (maximum distinct identities)
 - facilitator signature over the credential fields
 
-### Phase 2: ZK presentation for subsequent requests
+### Phase 2: ZK authorization for subsequent requests
 4. Later requests do not resend the payment payload and do not use a stable session token.
 5. Instead, the client provides a zero-knowledge proof that it holds a valid credential matching the endpoint’s requirements (service binding, tier, expiry, usage constraints).
 6. The server verifies the proof locally, without a facilitator call per request.
@@ -30,9 +30,9 @@ This provides a reusable access primitive without turning “session” into an 
 ## Replay prevention and rate limiting
 To support replay prevention and usage constraints, the proof derives an `origin_token`, for example:
 
-`origin_token = hash(nullifier_seed, origin_id, presentation_index)`
+`origin_token = hash(nullifier_seed, origin_id, identity_index)`
 
-The server tracks `origin_token` values to enforce constraints (e.g., prevent reuse, rate limit per origin). The client can control linkability behavior by how it uses `presentation_index` and `origin_id` across requests/endpoints.
+The server tracks `origin_token` values to enforce constraints (e.g., prevent reuse, rate limit per origin). The client can control linkability behavior by how it uses `identity_index` and `origin_id` across requests/endpoints.
 
 ## Transport considerations
 Proof and credential artifacts can exceed common HTTP header limits (proof sizes around the ~10–20KB range have already caused integration failures). The extension therefore defines body-based transport and requires proofs in the request body. In the body-based option, proofs are carried as a JSON object with a dedicated `zk_credential` envelope, while headers remain small and conventional. Public inputs are server-derived; clients send only `public_outputs` alongside the proof. The exact wire format is defined in the x402 ZK Credential spec and MUST be followed for interoperability.
