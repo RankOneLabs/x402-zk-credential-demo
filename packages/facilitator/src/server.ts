@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CredentialIssuer, type IssuerConfig } from './issuer.js';
 import type { SettlementRequest } from './types.js';
-import { parseSchemePrefix } from '@demo/crypto';
+import { parseSchemePrefix, type ZKCredentialErrorResponse } from '@demo/crypto';
 
 export interface FacilitatorServerConfig extends IssuerConfig {
   port: number;
@@ -77,17 +77,20 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
 
       // Validate request structure
       if (!request.extensions?.zk_credential?.commitment) {
-        res.status(400).json({ error: 'Missing extensions.zk_credential.commitment' });
+        const error: ZKCredentialErrorResponse = { error: 'invalid_proof', message: 'Missing extensions.zk_credential.commitment' };
+        res.status(400).json(error);
         return;
       }
 
       if (!request.payment) {
-        res.status(400).json({ error: 'Missing payment (x402 v2 PaymentPayload)' });
+        const error: ZKCredentialErrorResponse = { error: 'invalid_proof', message: 'Missing payment (x402 v2 PaymentPayload)' };
+        res.status(400).json(error);
         return;
       }
 
       if (!request.paymentRequirements) {
-        res.status(400).json({ error: 'Missing paymentRequirements' });
+        const error: ZKCredentialErrorResponse = { error: 'invalid_proof', message: 'Missing paymentRequirements' };
+        res.status(400).json(error);
         return;
       }
 
@@ -95,11 +98,13 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
       try {
         const { scheme } = parseSchemePrefix(request.extensions.zk_credential.commitment);
         if (scheme !== 'pedersen-schnorr-poseidon-ultrahonk') {
-          res.status(400).json({ error: 'unsupported_suite', message: `Unsupported suite: ${scheme}` });
+          const error: ZKCredentialErrorResponse = { error: 'unsupported_suite', message: `Unsupported suite: ${scheme}` };
+          res.status(400).json(error);
           return;
         }
       } catch {
-        res.status(400).json({ error: 'Invalid commitment format: expected suite-prefixed string' });
+        const error: ZKCredentialErrorResponse = { error: 'invalid_proof', message: 'Invalid commitment format: expected suite-prefixed string' };
+        res.status(400).json(error);
         return;
       }
 
@@ -113,7 +118,8 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[Facilitator] Error:', err.message);
-    res.status(500).json({ error: err.message });
+    const error: ZKCredentialErrorResponse = { error: 'server_error', message: err.message };
+    res.status(500).json(error);
   });
 
   let httpServer: ReturnType<typeof app.listen> | null = null;

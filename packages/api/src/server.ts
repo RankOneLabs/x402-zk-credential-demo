@@ -10,7 +10,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { ZkCredentialMiddleware, type ZkCredentialConfig } from './middleware.js';
-import { hexToBigInt } from '@demo/crypto';
+import { hexToBigInt, type ZKCredentialErrorResponse } from '@demo/crypto';
 
 export interface ApiServerConfig {
   port: number;
@@ -112,7 +112,11 @@ export function createApiServer(config: ApiServerConfig) {
       return;
     }
 
-    res.status(status).json({ error: message });
+    const error: ZKCredentialErrorResponse = {
+      error: isJsonParseError ? 'invalid_proof' : 'server_error',
+      message
+    };
+    res.status(status).json(error);
   });
 
   let httpServer: http.Server | null = null;

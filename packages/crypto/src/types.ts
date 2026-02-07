@@ -181,7 +181,18 @@ export type ZKCredentialErrorCode =
   | 'origin_mismatch'         // 400
   | 'payload_too_large'       // 413
   | 'unsupported_media_type'  // 415
-  | 'rate_limited';           // 429
+  | 'rate_limited'            // 429
+  | 'server_error';           // 500
+
+/** 
+ * Standardized Error Envelope (spec §14)
+ * All 4xx/5xx responses MUST use this format.
+ */
+export interface ZKCredentialErrorResponse {
+  error: ZKCredentialErrorCode;
+  message?: string;
+  details?: Record<string, unknown>;
+}
 
 /** Error response body */
 export interface ZKCredentialError {
@@ -200,6 +211,7 @@ export const ERROR_CODE_TO_STATUS: Record<ZKCredentialErrorCode, number> = {
   payload_too_large: 413,
   unsupported_media_type: 415,
   rate_limited: 429,
+  server_error: 500,
 };
 
 // =============================================================================
