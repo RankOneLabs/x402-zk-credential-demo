@@ -21,7 +21,7 @@ fn main(
     // === Private inputs: Credential ===
     cred_service_id: Field,
     cred_tier: Field,
-    cred_presentation_budget: Field,
+    cred_identity_limit: Field,
     cred_issued_at: Field,
     cred_expires_at: Field,
     cred_commitment_x: Field,
@@ -38,7 +38,7 @@ fn main(
     blinding_factor: Field,
     
     // === Private inputs: Presentation context ===
-    presentation_index: Field,
+    identity_index: Field,
 ) -> pub (Field, Field, Field) {
     // Returns: (origin_token, tier, expires_at)
     
@@ -55,12 +55,12 @@ fn main(
     // Using field comparison - expires_at must be greater than or equal to current_time
     assert(utils::field_gte(cred_expires_at, current_time), "Credential expired");
     
-    // 4. Verify presentation index is within bounds
-    assert(utils::field_lt(presentation_index, cred_presentation_budget), "Presentation index out of bounds");
+    // 4. Verify identity index is within budget
+    assert(utils::field_lt(identity_index, cred_identity_limit), "Identity index exceeds limit");
     
     // 5. Compute message hash for signature verification
     // We split 7 inputs into 4 and 3 to ensure compatibility with JS poseidon-lite
-    let h1 = bn254::hash_4([cred_service_id, cred_tier, cred_presentation_budget, cred_issued_at]);
+    let h1 = bn254::hash_4([cred_service_id, cred_tier, cred_identity_limit, cred_issued_at]);
     let h2 = bn254::hash_3([cred_expires_at, cred_commitment_x, cred_commitment_y]);
     let msg = bn254::hash_2([h1, h2]);
     
@@ -77,7 +77,7 @@ fn main(
     assert(sig_valid, "Invalid signature");
     
     // 7. Derive origin-bound token for rate limiting
-    let origin_token = bn254::hash_3([nullifier_seed, origin_id, presentation_index]);
+    let origin_token = bn254::hash_3([nullifier_seed, origin_id, identity_index]);
     
     // 8. Return tier and expiry for access control
     (origin_token, cred_tier, cred_expires_at)

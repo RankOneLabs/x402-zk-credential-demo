@@ -43,7 +43,7 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
       tiers: config.tiers.map(t => ({
         tier: t.tier,
         price_usdc: t.minAmountCents / 100,
-        presentation_budget: t.presentationBudget,
+        identityLimit: t.identityLimit,
         duration_seconds: t.durationSeconds,
       })),
     });
@@ -150,9 +150,9 @@ if (isMain) {
     secretKey: BigInt(process.env.FACILITATOR_SECRET_KEY ?? '0x1234567890abcdef'),
     allowMockPayments: process.env.ALLOW_MOCK_PAYMENTS === 'true',
     tiers: [
-      { minAmountCents: 1000, tier: 2, presentationBudget: 10000, durationSeconds: 30 * 24 * 60 * 60 }, // $10 = Enterprise
-      { minAmountCents: 100, tier: 1, presentationBudget: 1000, durationSeconds: 7 * 24 * 60 * 60 },   // $1 = Pro
-      { minAmountCents: 10, tier: 0, presentationBudget: 100, durationSeconds: 24 * 60 * 60 },         // $0.10 = Basic
+      { minAmountCents: 1000, tier: 2, identityLimit: 10000, durationSeconds: 30 * 24 * 60 * 60 }, // $10 = Enterprise
+      { minAmountCents: 100, tier: 1, identityLimit: 1000, durationSeconds: 7 * 24 * 60 * 60 },   // $1 = Pro
+      { minAmountCents: 10, tier: 0, identityLimit: 100, durationSeconds: 24 * 60 * 60 },         // $0.10 = Basic
     ],
     // EVM payment configuration (if private key is set)
     ...(process.env.FACILITATOR_PRIVATE_KEY && {

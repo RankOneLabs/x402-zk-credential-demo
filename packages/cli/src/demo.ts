@@ -128,7 +128,7 @@ async function main() {
   console.log('   Credential:');
   console.log(`   - service_id: ${credential.serviceId.slice(0, 20)}...`);
   console.log(`   - tier: ${credential.tier}`);
-  console.log(`   - presentation_budget: ${credential.presentationBudget}`);
+  console.log(`   - identity_limit: ${credential.identityLimit}`);
   console.log(`   - expires_at: ${new Date(credential.expiresAt * 1000).toLocaleString()}\n`);
 
   // === PHASE 3: Anonymous API Access ===
@@ -136,7 +136,7 @@ async function main() {
 
   // Parse facilitator pubkey
   const parsedPubkey = parseSchemePrefix(facilitatorPubkeyString).value;
-  const issuerPubkey = {
+  const facilitatorPubkey = {
     x: '0x' + parsedPubkey.slice(4, 68),
     y: '0x' + parsedPubkey.slice(68, 132),
   };
@@ -146,7 +146,7 @@ async function main() {
   // Test /api/whoami
   console.log('1. GET /api/whoami');
   const whoamiResp = await client.makeAuthenticatedRequest(`${API_URL}/api/whoami`, {
-    issuerPubkey,
+    facilitatorPubkey,
   });
   const whoamiData = await whoamiResp.json() as any;
   console.log(`   Status: ${whoamiResp.status}`);
@@ -162,7 +162,7 @@ async function main() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg }),
-      issuerPubkey,
+      facilitatorPubkey,
     });
 
     const body = await response.json() as any;

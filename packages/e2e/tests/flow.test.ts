@@ -144,7 +144,7 @@ describe('End-to-End Flow', () => {
             serviceId: 1001n,
             secretKey: 123456789n,
             tiers: [
-                { minAmountCents: 10, tier: 1, presentationBudget: 10, durationSeconds: 3600 }
+                { minAmountCents: 10, tier: 1, identityLimit: 10, durationSeconds: 3600 }
             ],
             evmPayment: {
                 chainId: 31337,
@@ -322,7 +322,7 @@ describe('End-to-End Flow', () => {
         console.log('Accessing protected API with ZK proof...');
         const response = await client.makeAuthenticatedRequest(
             `http://localhost:${API_PORT}/api/whoami`,
-            { issuerPubkey: facilitatorPubkey }
+            { facilitatorPubkey: facilitatorPubkey }
         );
 
         console.log('Response status:', response.status);

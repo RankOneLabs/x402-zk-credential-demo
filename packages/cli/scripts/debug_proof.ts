@@ -27,10 +27,10 @@ async function main() {
     const currentTime = BigInt(Math.floor(Date.now() / 1000));
     const originId = 12345n;
     const credTier = 1n;
-    const credPresentationBudget = 1000n;
+    const credIdentityLimit = 1000n;
     const credIssuedAt = currentTime - 1000n;
     const credExpiresAt = currentTime + 86400n;
-    const presentationIndex = 0n;
+    const identityIndex = 0n;
 
     // 2. Crypto
     const { secretKey, publicKey } = await generateKeypair();
@@ -39,7 +39,7 @@ async function main() {
     const message = poseidonHash7(
         serviceId,
         credTier,
-        credPresentationBudget,
+        credIdentityLimit,
         credIssuedAt,
         credExpiresAt,
         commitment.point.x,
@@ -63,7 +63,7 @@ async function main() {
 
         cred_service_id: fmt(serviceId),
         cred_tier: fmt(credTier),
-        cred_presentation_budget: fmt(credPresentationBudget),
+        cred_identity_limit: fmt(credIdentityLimit),
         cred_issued_at: fmt(credIssuedAt),
         cred_expires_at: fmt(credExpiresAt),
         cred_commitment_x: fmt(commitment.point.x),
@@ -77,7 +77,7 @@ async function main() {
         nullifier_seed: fmt(nullifierSeed),
         blinding_factor: fmt(blindingFactor),
 
-        presentation_index: fmt(presentationIndex),
+        identity_index: fmt(identityIndex),
     };
 
     console.log('Generating witness...');

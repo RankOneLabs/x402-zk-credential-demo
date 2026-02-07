@@ -24,12 +24,12 @@ const originId = 12345n;
 
 // Credential values
 const credTier = 1n;
-const credPresentationBudget = 1000n;
+const credIdentityLimit = 1000n;
 const credIssuedAt = currentTime - 1000n;  // Issued 1000s ago
 const credExpiresAt = currentTime + 86400n; // Expires in 1 day
 
 // Presentation context
-const presentationIndex = 0n;
+const identityIndex = 0n;
 
 async function main() {
   await initPedersen();
@@ -46,7 +46,7 @@ async function main() {
   const message = poseidonHash7(
     serviceId,
     credTier,
-    credPresentationBudget,
+    credIdentityLimit,
     credIssuedAt,
     credExpiresAt,
     commitment.point.x,
@@ -74,7 +74,7 @@ async function main() {
   console.log('# Private inputs: Credential');
   console.log(`cred_service_id = "${serviceId}"`);
   console.log(`cred_tier = "${credTier}"`);
-  console.log(`cred_presentation_budget = "${credPresentationBudget}"`);
+  console.log(`cred_identity_limit = "${credIdentityLimit}"`);
   console.log(`cred_issued_at = "${credIssuedAt}"`);
   console.log(`cred_expires_at = "${credExpiresAt}"`);
   console.log(`cred_commitment_x = "${commitment.point.x}"`);
@@ -91,7 +91,7 @@ async function main() {
   console.log(`blinding_factor = "${blindingFactor}"`);
   console.log('');
   console.log('# Private inputs: Presentation context');
-  console.log(`presentation_index = "${presentationIndex}"`);
+  console.log(`identity_index = "${identityIndex}"`);
 }
 
 main().catch(console.error);

@@ -53,7 +53,7 @@ import { CredentialStorage, type StoredCredential } from './storage.js';
 import x402Circuit from './circuits/x402_zk_credential.json' with { type: 'json' };
 import { ProofCache, type CachedProof } from './cache.js';
 
-export type PresentationStrategy =
+export type IdentityStrategy =
   | 'max-privacy'      // Always increment index
   | 'max-performance'  // Always reuse index=0
   | 'per-origin'       // One index per origin
@@ -61,7 +61,7 @@ export type PresentationStrategy =
 
 export interface ClientConfig {
   /** Presentation strategy */
-  strategy: PresentationStrategy;
+  strategy: IdentityStrategy;
   /** Time bucket size in seconds (for time-bucketed strategy) */
   timeBucketSeconds: number;
   /** Enable proof caching */
@@ -256,7 +256,7 @@ export class ZkCredentialClient {
     );
 
     this.storage.set(stored);
-    console.log(`[Client] Credential obtained: tier=${credential.tier}, presentation_budget=${credential.presentation_budget}`);
+    console.log(`[Client] Credential obtained: tier=${credential.tier}, identity_limit=${credential.identity_limit}`);
 
     return stored;
   }
@@ -291,7 +291,7 @@ export class ZkCredentialClient {
     return {
       serviceId: wire.service_id,
       tier: wire.tier,
-      presentationBudget: wire.presentation_budget,
+      identityLimit: wire.identity_limit,
       issuedAt: wire.issued_at,
       expiresAt: wire.expires_at,
       userCommitment: {
@@ -304,12 +304,12 @@ export class ZkCredentialClient {
       },
       // Facilitator pubkey is obtained from 402 response, not stored here
       // The client must get it from the 402 response each time
-      issuerPubkey: { x: '0x0', y: '0x0' }, // Placeholder - updated when making requests
+      facilitatorPubkey: { x: '0x0', y: '0x0' }, // Placeholder - updated when making requests
       nullifierSeed: bigIntToHex(nullifierSeed),
       blindingFactor: bigIntToHex(blindingFactor),
-      presentationCount: 0,
+      identityCount: 0,
       obtainedAt: Date.now(),
-      issuerUrl: facilitatorUrl,
+      facilitatorUrl: facilitatorUrl,
     };
   }
 
@@ -394,7 +394,7 @@ export class ZkCredentialClient {
     );
 
     this.storage.set(stored);
-    console.log(`[Client] Credential obtained: tier=${credential.tier}, presentation_budget=${credential.presentation_budget}`);
+    console.log(`[Client] Credential obtained: tier=${credential.tier}, identity_limit=${credential.identity_limit}`);
 
     return stored;
   }
@@ -409,7 +409,7 @@ export class ZkCredentialClient {
     url: string,
     options: RequestInit & {
       forceUnlinkable?: boolean;
-      issuerPubkey?: { x: string; y: string };  // Required for proof generation
+      facilitatorPubkey?: { x: string; y: string };  // Required for proof generation
     } = {}
   ): Promise<Response> {
     const urlObj = new URL(url);
@@ -441,24 +441,24 @@ export class ZkCredentialClient {
       throw new Error('Credential expired. Obtain a new one.');
     }
 
-    // Ensure we have issuer pubkey (either from stored credential or options)
-    const storedIssuerPubkey =
-      credential.issuerPubkey && credential.issuerPubkey.x !== '0x0'
-        ? credential.issuerPubkey
+    // Ensure we have facilitator pubkey (either from stored credential or options)
+    const storedFacilitatorPubkey =
+      credential.facilitatorPubkey && credential.facilitatorPubkey.x !== '0x0'
+        ? credential.facilitatorPubkey
         : undefined;
 
-    const issuerPubkey = options.issuerPubkey ?? storedIssuerPubkey;
+    const facilitatorPubkey = options.facilitatorPubkey ?? storedFacilitatorPubkey;
 
-    if (!issuerPubkey) {
+    if (!facilitatorPubkey) {
       throw new Error(
-        'Issuer public key not available. Provide it via options.issuerPubkey'
+        'Facilitator public key not available. Provide it via options.facilitatorPubkey'
       );
     }
 
-    // Persist the resolved issuer pubkey so future requests don't need options.issuerPubkey
-    credential.issuerPubkey = issuerPubkey;
+    // Persist the resolved facilitator pubkey so future requests don't need options.facilitatorPubkey
+    credential.facilitatorPubkey = facilitatorPubkey;
     // Select presentation index based on strategy
-    const { index, timeBucket } = this.selectPresentationIndex(
+    const { index, timeBucket } = this.selectIdentityIndex(
       credential,
       originId,
       options.forceUnlinkable
@@ -535,7 +535,7 @@ export class ZkCredentialClient {
   private async generateProof(
     credential: StoredCredential,
     originId: bigint,
-    presentationIndex: number,
+    identityIndex: number,
     timeBucket?: number
   ): Promise<CachedProof> {
     const circuit = x402Circuit as any;
@@ -554,13 +554,13 @@ export class ZkCredentialClient {
       service_id: fmt(credential.serviceId),
       current_time: fmt(currentTime),
       origin_id: fmt(originId),
-      facilitator_pubkey_x: fmt(credential.issuerPubkey.x),
-      facilitator_pubkey_y: fmt(credential.issuerPubkey.y),
+      facilitator_pubkey_x: fmt(credential.facilitatorPubkey.x),
+      facilitator_pubkey_y: fmt(credential.facilitatorPubkey.y),
 
       // Private inputs
       cred_service_id: fmt(credential.serviceId),
       cred_tier: fmt(credential.tier),
-      cred_presentation_budget: fmt(credential.presentationBudget),
+      cred_identity_limit: fmt(credential.identityLimit),
       cred_issued_at: fmt(credential.issuedAt),
       cred_expires_at: fmt(credential.expiresAt),
       cred_commitment_x: fmt(credential.userCommitment.x),
@@ -574,7 +574,7 @@ export class ZkCredentialClient {
       nullifier_seed: fmt(credential.nullifierSeed),
       blinding_factor: fmt(credential.blindingFactor),
 
-      presentation_index: fmt(presentationIndex),
+      identity_index: fmt(identityIndex),
     };
 
     try {
@@ -605,7 +605,7 @@ export class ZkCredentialClient {
         meta: {
           serviceId: credential.serviceId,
           originId: originId.toString(),
-          presentationIndex,
+          identityIndex,
           timeBucket,
         },
       };
@@ -618,20 +618,20 @@ export class ZkCredentialClient {
   /**
    * Select presentation index based on strategy
    */
-  private selectPresentationIndex(
+  private selectIdentityIndex(
     credential: StoredCredential,
     originId: bigint,
     forceUnlinkable?: boolean
   ): { index: number; timeBucket?: number } {
     // Force unlinkable overrides strategy
     if (forceUnlinkable) {
-      const index = this.storage.incrementPresentationCount(credential.serviceId) - 1;
+      const index = this.storage.incrementIdentityCount(credential.serviceId) - 1;
       return { index };
     }
 
     switch (this.config.strategy) {
       case 'max-privacy': {
-        const index = this.storage.incrementPresentationCount(credential.serviceId) - 1;
+        const index = this.storage.incrementIdentityCount(credential.serviceId) - 1;
         return { index };
       }
 
@@ -641,7 +641,7 @@ export class ZkCredentialClient {
       case 'per-origin': {
         const originKey = originId.toString();
         if (!this.originIndices.has(originKey)) {
-          const index = this.storage.incrementPresentationCount(credential.serviceId) - 1;
+          const index = this.storage.incrementIdentityCount(credential.serviceId) - 1;
           this.originIndices.set(originKey, index);
         }
         return { index: this.originIndices.get(originKey)! };
@@ -659,7 +659,7 @@ export class ZkCredentialClient {
           BigInt(credential.obtainedAt)
         );
 
-        const index = Number(hash % BigInt(credential.presentationBudget));
+        const index = Number(hash % BigInt(credential.identityLimit));
         return { index, timeBucket };
       }
 
@@ -681,7 +681,7 @@ export class ZkCredentialClient {
   getCredentialStatus(serviceId?: string): {
     credential: StoredCredential;
     status: 'valid' | 'expired' | 'exhausted';
-    remainingPresentations: number;
+    remainingIdentities: number;
     expiresIn: number;
   } | undefined {
     const credentials = this.storage.list();
@@ -695,7 +695,7 @@ export class ZkCredentialClient {
 
     const now = Math.floor(Date.now() / 1000);
     const expiresIn = credential.expiresAt - now;
-    const remaining = credential.presentationBudget - credential.presentationCount;
+    const remaining = credential.identityLimit - credential.identityCount;
 
     let status: 'valid' | 'expired' | 'exhausted';
     if (expiresIn <= 0) {
@@ -709,7 +709,7 @@ export class ZkCredentialClient {
     return {
       credential,
       status,
-      remainingPresentations: Math.max(0, remaining),
+      remainingIdentities: Math.max(0, remaining),
       expiresIn: Math.max(0, expiresIn),
     };
   }

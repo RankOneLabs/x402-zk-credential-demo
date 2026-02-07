@@ -1,7 +1,7 @@
 /**
  * Proof Cache
  * 
- * Caches ZK proofs for reuse when using the same presentation_index.
+ * Caches ZK proofs for reuse when using the same identity_index.
  */
 
 export interface CachedProof {
@@ -19,7 +19,7 @@ export interface CachedProof {
   meta: {
     serviceId: string;
     originId: string;
-    presentationIndex: number;
+    identityIndex: number;
     timeBucket?: number;
   };
 }
@@ -38,10 +38,10 @@ export class ProofCache {
   private computeKey(
     serviceId: string,
     originId: string,
-    presentationIndex: number,
+    identityIndex: number,
     timeBucket?: number
   ): string {
-    return `${serviceId}:${originId}:${presentationIndex}:${timeBucket ?? 'none'}`;
+    return `${serviceId}:${originId}:${identityIndex}:${timeBucket ?? 'none'}`;
   }
 
   /**
@@ -50,10 +50,10 @@ export class ProofCache {
   get(
     serviceId: string,
     originId: string,
-    presentationIndex: number,
+    identityIndex: number,
     timeBucket?: number
   ): CachedProof | undefined {
-    const key = this.computeKey(serviceId, originId, presentationIndex, timeBucket);
+    const key = this.computeKey(serviceId, originId, identityIndex, timeBucket);
     const cached = this.cache.get(key);
 
     if (!cached) {
@@ -75,11 +75,11 @@ export class ProofCache {
   set(
     serviceId: string,
     originId: string,
-    presentationIndex: number,
+    identityIndex: number,
     proof: CachedProof,
     timeBucket?: number
   ): void {
-    const key = this.computeKey(serviceId, originId, presentationIndex, timeBucket);
+    const key = this.computeKey(serviceId, originId, identityIndex, timeBucket);
 
     // Prune if at capacity
     if (this.cache.size >= this.maxSize) {
@@ -88,7 +88,7 @@ export class ProofCache {
 
     this.cache.set(key, {
       ...proof,
-      meta: { serviceId, originId, presentationIndex, timeBucket },
+      meta: { serviceId, originId, identityIndex, timeBucket },
     });
   }
 

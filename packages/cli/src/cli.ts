@@ -6,7 +6,7 @@
  */
 
 import { Command } from 'commander';
-import { ZkCredentialClient, type PresentationStrategy } from './client.js';
+import { ZkCredentialClient, type IdentityStrategy } from './client.js';
 
 const program = new Command();
 
@@ -43,9 +43,9 @@ credentialCmd
       console.log(`Service: ${cred.serviceId}`);
       console.log(`  Tier: ${cred.tier}`);
       console.log(`  Status: ${status?.status}`);
-      console.log(`  Used: ${cred.presentationCount}/${cred.presentationBudget}`);
+      console.log(`  Used: ${cred.identityCount}/${cred.identityLimit}`);
       console.log(`  Expires in: ${Math.round((status?.expiresIn ?? 0) / 60)} minutes`);
-      console.log(`  Issuer: ${cred.issuerUrl}`);
+      console.log(`  Issuer: ${cred.facilitatorUrl}`);
       console.log();
     }
   });
@@ -66,7 +66,7 @@ credentialCmd
     console.log(`Credential Status: ${status.status.toUpperCase()}\n`);
     console.log(`  Service: ${status.credential.serviceId}`);
     console.log(`  Tier: ${status.credential.tier}`);
-    console.log(`  Remaining: ${status.remainingPresentations} presentations`);
+    console.log(`  Remaining: ${status.remainingIdentities} identities`);
     console.log(`  Expires in: ${Math.round(status.expiresIn / 60)} minutes`);
   });
 
@@ -86,11 +86,11 @@ program
   .argument('<method>', 'HTTP method (GET, POST, etc.)')
   .argument('<url>', 'Request URL')
   .option('--data <json>', 'Request body (JSON)')
-  .option('--strategy <strategy>', 'Presentation strategy', 'time-bucketed')
+  .option('--strategy <strategy>', 'Identity strategy', 'time-bucketed')
   .option('--force-unlinkable', 'Force unlinkable request')
   .action(async (method: string, url: string, options) => {
     const client = new ZkCredentialClient({
-      strategy: options.strategy as PresentationStrategy,
+      strategy: options.strategy as IdentityStrategy,
     });
 
     console.log(`${method} ${url}`);

@@ -13,21 +13,21 @@ export interface StoredCredential {
   // Credential from issuer
   serviceId: string;
   tier: number;
-  presentationBudget: number;
+  identityLimit: number;
   issuedAt: number;
   expiresAt: number;
   userCommitment: { x: string; y: string };
   signature: { r: { x: string; y: string }; s: string };
-  issuerPubkey: { x: string; y: string };
+  facilitatorPubkey: { x: string; y: string };
 
   // User secrets
   nullifierSeed: string;
   blindingFactor: string;
 
   // Tracking
-  presentationCount: number;
+  identityCount: number;
   obtainedAt: number;
-  issuerUrl: string;
+  facilitatorUrl: string;
 }
 
 export interface StorageData {
@@ -106,17 +106,17 @@ export class CredentialStorage {
   }
 
   /**
-   * Increment presentation count
+   * Increment identity count
    */
-  incrementPresentationCount(serviceId: string): number {
+  incrementIdentityCount(serviceId: string): number {
     const cred = this.data.credentials[serviceId];
     if (!cred) {
       throw new Error(`No credential for service ${serviceId}`);
     }
 
-    cred.presentationCount++;
+    cred.identityCount++;
     this.save();
-    return cred.presentationCount;
+    return cred.identityCount;
   }
 
   /**

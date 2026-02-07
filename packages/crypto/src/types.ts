@@ -57,7 +57,7 @@ export interface SignedCredential {
   suite: ZKCredentialSuite;
   serviceId: bigint;
   tier: number;
-  presentationBudget: number;
+  identityLimit: number;
   issuedAt: number;
   expiresAt: number;
   userCommitment: Point;
@@ -149,7 +149,7 @@ export interface CredentialWireFormat {
   kid?: string;
   service_id: string;
   tier: number;
-  presentation_budget: number;
+  identity_limit: number;
   issued_at: number;
   expires_at: number;
   commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
