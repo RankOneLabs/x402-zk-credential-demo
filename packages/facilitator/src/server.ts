@@ -43,7 +43,7 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
       tiers: config.tiers.map(t => ({
         tier: t.tier,
         price_usdc: t.minAmountCents / 100,
-        identityLimit: t.identityLimit,
+        identity_limit: t.identityLimit,
         duration_seconds: t.durationSeconds,
       })),
     });
