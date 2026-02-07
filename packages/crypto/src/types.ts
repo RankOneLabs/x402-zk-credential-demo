@@ -182,6 +182,8 @@ export type ZKCredentialErrorCode =
   | 'payload_too_large'       // 413
   | 'unsupported_media_type'  // 415
   | 'rate_limited'            // 429
+  | 'not_found'               // 404
+  | 'service_unavailable'     // 503
   | 'server_error';           // 500
 
 /** 
@@ -211,6 +213,8 @@ export const ERROR_CODE_TO_STATUS: Record<ZKCredentialErrorCode, number> = {
   payload_too_large: 413,
   unsupported_media_type: 415,
   rate_limited: 429,
+  not_found: 404,
+  service_unavailable: 503,
   server_error: 500,
 };
 

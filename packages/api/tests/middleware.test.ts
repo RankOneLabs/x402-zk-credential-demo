@@ -347,6 +347,36 @@ describe('ZkCredentialMiddleware', () => {
     });
   });
 
+  describe('middleware - payment settlement', () => {
+    it('should return 503 when facilitator is unavailable', async () => {
+      const middleware = new ZkCredentialMiddleware(defaultConfig);
+
+      // Mock fetch to throw error
+      global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
+
+      const body = {
+        payment: { some: 'payment' },
+        extensions: {
+          zk_credential: {
+            commitment: 'pedersen-schnorr-poseidon-ultrahonk:0x123'
+          }
+        }
+      };
+      const req = createMockRequest({});
+      req.body = body; // Explicitly set body — createMockRequest only auto-detects zk_credential bodies
+      const res = createMockResponse();
+      const next = vi.fn();
+
+      await middleware.middleware()(req as Request, res as Response, next);
+
+      expect(res.statusCode).toBe(503);
+      expect(res.jsonData).toEqual({
+        error: 'service_unavailable',
+        message: 'Payment facilitator is temporarily unavailable. Please retry.'
+      });
+    });
+  });
+
   describe('verifyRequest - public input validation', () => {
     it('should reject mismatched service_id', async () => {
       const middleware = new ZkCredentialMiddleware({

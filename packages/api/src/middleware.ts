@@ -32,13 +32,14 @@ import { RateLimiter, type RateLimitConfig } from './ratelimit.js';
 import { ZkVerifier } from './verifier.js';
 
 class PaymentError extends Error {
+  public readonly httpStatus: number;
   constructor(
     public readonly code: ZKCredentialErrorCode,
-    public readonly httpStatus: number,
     message: string
   ) {
     super(message);
     this.name = 'PaymentError';
+    this.httpStatus = ERROR_CODE_TO_STATUS[code];
   }
 }
 
@@ -201,13 +202,12 @@ export class ZkCredentialMiddleware {
           console.log('[ZkCredential] Processing payment body...');
 
           if (!paymentBody || typeof paymentBody !== 'object') {
-            throw new PaymentError('invalid_proof', 400, 'Missing payment body');
+            throw new PaymentError('invalid_proof', 'Missing payment body');
           }
 
           if (!zkCredential?.commitment) {
             throw new PaymentError(
               'invalid_proof',
-              400,
               'Missing extensions.zk_credential.commitment per spec §8.2'
             );
           }
@@ -233,8 +233,7 @@ export class ZkCredentialMiddleware {
             });
           } catch (fetchError) {
             throw new PaymentError(
-              'server_error',
-              503,
+              'service_unavailable',
               'Payment facilitator is temporarily unavailable. Please retry.'
             );
           }
@@ -244,13 +243,11 @@ export class ZkCredentialMiddleware {
             if (settleResp.status >= 400 && settleResp.status < 500) {
               throw new PaymentError(
                 'tier_insufficient',
-                402,
                 `Payment rejected by facilitator: ${errBody}`
               );
             } else {
               throw new PaymentError(
-                'server_error',
-                503,
+                'service_unavailable',
                 'Payment facilitator is temporarily unavailable. Please retry.'
               );
             }
@@ -262,7 +259,6 @@ export class ZkCredentialMiddleware {
           if (!settleData || typeof settleData !== 'object') {
             throw new PaymentError(
               'server_error',
-              502,
               'Payment facilitator returned an invalid response'
             );
           }
@@ -273,7 +269,6 @@ export class ZkCredentialMiddleware {
           if (!response.payment_receipt || typeof response.payment_receipt !== 'object') {
             throw new PaymentError(
               'server_error',
-              502,
               'Settlement response missing payment_receipt'
             );
           }
@@ -281,7 +276,6 @@ export class ZkCredentialMiddleware {
           if (receipt.status !== 'settled') {
             throw new PaymentError(
               'tier_insufficient',
-              402,
               `Settlement failed: status=${receipt.status}`
             );
           }
@@ -290,7 +284,6 @@ export class ZkCredentialMiddleware {
           if (!response.extensions || typeof response.extensions !== 'object') {
             throw new PaymentError(
               'server_error',
-              502,
               'Settlement response missing extensions'
             );
           }
@@ -298,7 +291,6 @@ export class ZkCredentialMiddleware {
           if (!extensions.zk_credential || typeof extensions.zk_credential !== 'object') {
             throw new PaymentError(
               'server_error',
-              502,
               'Settlement response missing extensions.zk_credential'
             );
           }
@@ -306,7 +298,6 @@ export class ZkCredentialMiddleware {
           if (!zkCredExt.credential || typeof zkCredExt.credential !== 'object') {
             throw new PaymentError(
               'server_error',
-              502,
               'Settlement response missing extensions.zk_credential.credential'
             );
           }
@@ -316,7 +307,6 @@ export class ZkCredentialMiddleware {
           if (typeof cred.tier !== 'number') {
             throw new PaymentError(
               'server_error',
-              502,
               'Settlement response credential missing tier'
             );
           }

@@ -123,10 +123,29 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
     }
   });
 
+  // 404 Handler
+  app.use((_req, res) => {
+    const error: ZKCredentialErrorResponse = { error: 'not_found', message: 'Not Found' };
+    res.status(404).json(error);
+  });
+
   // Error handler
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[Facilitator] Error:', err.message);
-    const error: ZKCredentialErrorResponse = { error: 'server_error', message: err.message };
+
+    // In production, hide internal error details
+    const isProduction = process.env.NODE_ENV === 'production';
+    const message = isProduction ? 'Internal Server Error' : err.message;
+
+    const error: ZKCredentialErrorResponse = {
+      error: 'server_error',
+      message
+    };
+
+    if (!isProduction && err.stack) {
+      error.details = { stack: err.stack };
+    }
+
     res.status(500).json(error);
   });
 
