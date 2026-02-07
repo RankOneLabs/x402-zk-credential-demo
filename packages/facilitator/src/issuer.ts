@@ -69,7 +69,7 @@ export interface TierConfig {
   minAmountCents: number;
   /** Tier level (0 = basic, 1 = pro, etc.) */
   tier: number;
-  /** Maximum presentations allowed (presentation_budget per spec) */
+  /** Maximum identities/presentations allowed (identityLimit per spec) */
   identityLimit: number;
   /** Duration in seconds */
   durationSeconds: number;
