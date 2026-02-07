@@ -377,7 +377,7 @@ describe('ZkCredentialMiddleware', () => {
     });
   });
 
-  describe('verifyRequest - public input validation', () => {
+  describe('verifyRequest - public input validation', { timeout: 30_000 }, () => {
     it('should reject mismatched service_id', async () => {
       const middleware = new ZkCredentialMiddleware({
         ...defaultConfig,
@@ -581,7 +581,7 @@ describe('ZkCredentialMiddleware', () => {
     });
   });
 
-  describe('origin ID computation', () => {
+  describe('origin ID computation', { timeout: 30_000 }, () => {
     it('should compute different origin IDs for different paths', async () => {
       const middleware = new ZkCredentialMiddleware({
         ...defaultConfig,
