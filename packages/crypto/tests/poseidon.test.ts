@@ -3,7 +3,7 @@ import {
   poseidonHash,
   poseidonHash3,
   poseidonHash5,
-  poseidonHash7,
+  poseidonHash6,
 } from '../src/poseidon.js';
 
 describe('Poseidon Hash', () => {
@@ -28,8 +28,8 @@ describe('Poseidon Hash', () => {
     expect(typeof result).toBe('bigint');
   });
   
-  it('should hash seven elements', () => {
-    const result = poseidonHash7(1n, 2n, 3n, 4n, 5n, 6n, 7n);
+  it('should hash six elements', () => {
+    const result = poseidonHash6(1n, 2n, 3n, 4n, 5n, 6n);
     expect(typeof result).toBe('bigint');
   });
   

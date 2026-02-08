@@ -58,7 +58,6 @@ export interface SignedCredential {
   serviceId: bigint;
   tier: number;
   identityLimit: number;
-  issuedAt: number;
   expiresAt: number;
   userCommitment: Point;
   signature: SchnorrSignature;
@@ -150,7 +149,6 @@ export interface CredentialWireFormat {
   service_id: string;
   tier: number;
   identity_limit: number;
-  issued_at: number;
   expires_at: number;
   commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
   signature: string;  // hex-encoded ("0x<R_x><R_y><s>")

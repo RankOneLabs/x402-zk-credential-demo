@@ -8,7 +8,7 @@
 import {
   schnorrSign,
   derivePublicKey,
-  poseidonHash7,
+  poseidonHash6,
   bigIntToHex,
   hexToBigInt,
   parseSchemePrefix,
@@ -243,11 +243,10 @@ export class CredentialIssuer {
     const now = Math.floor(Date.now() / 1000);
     const expiresAt = now + tierConfig.durationSeconds;
 
-    const message = poseidonHash7(
+    const message = poseidonHash6(
       this.config.serviceId,
       BigInt(tierConfig.tier),
       BigInt(tierConfig.identityLimit),
-      BigInt(now),
       BigInt(expiresAt),
       userCommitment.x,
       userCommitment.y,
@@ -281,7 +280,6 @@ export class CredentialIssuer {
             tier: tierConfig.tier,
             identity_limit: tierConfig.identityLimit,
             kid: this.config.kid ?? '1',
-            issued_at: now,
             expires_at: expiresAt,
             commitment: commitmentOutHex,
             signature: sigHex,

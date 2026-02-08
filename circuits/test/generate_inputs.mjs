@@ -9,7 +9,7 @@ import {
   pedersenCommit,
   generateKeypair,
   schnorrSign,
-  poseidonHash7,
+  poseidonHash6,
   initPedersen
 } from '@demo/crypto';
 
@@ -25,7 +25,6 @@ const originId = 12345n;
 // Credential values
 const credTier = 1n;
 const credIdentityLimit = 1000n;
-const credIssuedAt = currentTime - 1000n;  // Issued 1000s ago
 const credExpiresAt = currentTime + 86400n; // Expires in 1 day
 
 // Presentation context
@@ -43,11 +42,10 @@ async function main() {
   const commitment = await pedersenCommit(nullifierSeed, blindingFactor);
 
   // 3. Compute message hash (matches circuit logic)
-  const message = poseidonHash7(
+  const message = poseidonHash6(
     serviceId,
     credTier,
     credIdentityLimit,
-    credIssuedAt,
     credExpiresAt,
     commitment.point.x,
     commitment.point.y
@@ -75,7 +73,6 @@ async function main() {
   console.log(`cred_service_id = "${serviceId}"`);
   console.log(`cred_tier = "${credTier}"`);
   console.log(`cred_identity_limit = "${credIdentityLimit}"`);
-  console.log(`cred_issued_at = "${credIssuedAt}"`);
   console.log(`cred_expires_at = "${credExpiresAt}"`);
   console.log(`cred_commitment_x = "${commitment.point.x}"`);
   console.log(`cred_commitment_y = "${commitment.point.y}"`);

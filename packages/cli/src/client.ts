@@ -313,7 +313,6 @@ export class ZkCredentialClient {
       kid: wire.kid,
       tier: wire.tier,
       identityLimit: wire.identity_limit,
-      issuedAt: wire.issued_at,
       expiresAt: wire.expires_at,
       userCommitment: {
         x: bigIntToHex(commitmentX),
@@ -608,7 +607,6 @@ export class ZkCredentialClient {
       cred_service_id: fmt(credential.serviceId),
       cred_tier: fmt(credential.tier),
       cred_identity_limit: fmt(credential.identityLimit),
-      cred_issued_at: fmt(credential.issuedAt),
       cred_expires_at: fmt(credential.expiresAt),
       cred_commitment_x: fmt(credential.userCommitment.x),
       cred_commitment_y: fmt(credential.userCommitment.y),

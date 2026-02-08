@@ -3,9 +3,12 @@
  * 
  * Sign: (R, s) where R = k*G, s = k + e * sk (mod Fq)
  * Verify: Not fully implemented in JS (requires arbitrary point arithmetic)
+ * 
+ * Uses BarretenbergSync (shared singleton with pedersen.ts) to avoid
+ * spinning up a second WASM runtime.
  */
 
-import { Barretenberg, Fr } from '@aztec/bb.js';
+import { BarretenbergSync, Fr } from '@aztec/bb.js';
 import type { Point, SchnorrSignature } from './types.js';
 import { poseidonHash } from './poseidon.js';
 import { randomFieldElement } from './utils.js';
@@ -17,11 +20,14 @@ export const GRUMPKIN_SCALAR_MODULUS = 21888242871839275222246405745257275088696
 // Limit for Barretenberg Fr inputs
 const BN254_FR_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
-let bb: Barretenberg | null = null;
+let bbInitialized = false;
+let bb: BarretenbergSync;
 
-async function getBb() {
-  if (!bb) {
-    bb = await Barretenberg.new({ threads: 1 });
+async function ensureBb(): Promise<BarretenbergSync> {
+  if (!bbInitialized) {
+    await BarretenbergSync.initSingleton();
+    bb = BarretenbergSync.getSingleton();
+    bbInitialized = true;
   }
   return bb;
 }
@@ -72,14 +78,10 @@ export async function generateKeypair(): Promise<{ secretKey: bigint; publicKey:
  */
 export async function derivePublicKey(secretKey: bigint): Promise<Point> {
   validateScalar(secretKey, 'secretKey');
-  const backend = await getBb();
+  const backend = await ensureBb();
 
   // pedersenCommit([s], 0) computes s * G + 0 * H = s * G
-  // Input Fr(s) - bb.js wraps this into the scalar mul
-  // Note: Fr constructor handles bigints.
-  // Although we are doing Grumpkin mul, standard pedersen uses Fr as input wrapper type?
-  // Let's check debug_crypto.mjs which worked: `new Fr(BigInt(s))`
-  const comm = await backend.pedersenCommit([new Fr(secretKey), new Fr(0n)], 0);
+  const comm = backend.pedersenCommit([new Fr(secretKey), new Fr(0n)], 0);
 
   return {
     x: frToBigInt(comm.x),
@@ -104,20 +106,15 @@ export async function schnorrSign(secretKey: bigint, message: bigint): Promise<S
     throw new Error('secretKey cannot be zero');
   }
 
-  const backend = await getBb();
+  const backend = await ensureBb();
 
   // Generate random nonce k mod Fq
   const k = randomGrumpkinScalar();
-  // console.log('[Schnorr] Signing with sk:', BigInt(secretKey).toString(16));
-  // console.log('[Schnorr] Generated nonce k:', k.toString(16));
 
   // R = k * G
   const kFr = new Fr(k);
-  // console.log('[Schnorr] Fr(k):', kFr.toString());
 
-  const commR = await backend.pedersenCommit([kFr, new Fr(0n)], 0);
-  // console.log('[Schnorr] commR.x:', commR.x.toString());
-  // console.log('[Schnorr] commR.y:', commR.y.toString());
+  const commR = backend.pedersenCommit([kFr, new Fr(0n)], 0);
 
   const Rx = frToBigInt(commR.x);
   const Ry = frToBigInt(commR.y);

@@ -4,7 +4,7 @@
 
 **Compliant with [x402 zk-credential spec v0.2.0](./zk-credential-spec.md)**
 
-Anonymous session credentials for x402 APIs using zero-knowledge proofs.
+Anonymous credentials for x402 APIs using zero-knowledge proofs.
 
 ## Overview
 
@@ -126,7 +126,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
 1. **Discovery:** Client requests protected resource → receives 402 with `extensions.zk_credential`
 2. **Settlement:** Client sends payment + commitment (body) → receives credential
-3. **Presentation:** Client POSTs proof in request body (`zk_credential` envelope)
+3. **Identity:** Client POSTs proof in request body (`zk_credential` envelope)
 4. **Verification:** Server verifies ZK proof and applies rate limiting
 
 ### 402 Response Format (spec §7)
@@ -153,7 +153,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 }
 ```
 
-### Proof Presentation Body (spec §6.3)
+### Proof Identity Body (spec §6.3)
 
 ```json
 {
@@ -173,7 +173,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
 ## Privacy Budget
 
-Clients control the privacy/performance tradeoff via `presentation_index`:
+Clients control the privacy/performance tradeoff via `identity_index`:
 
 | Strategy | Privacy | Performance |
 |----------|---------|-------------|
