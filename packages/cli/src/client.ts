@@ -563,10 +563,10 @@ export class ZkCredentialClient {
         version: '0.1.0',
         suite: 'pedersen-schnorr-poseidon-ultrahonk',
         proof: proof.proof,
+        current_time: proof.currentTime,
         public_outputs: {
           origin_token: proof.originToken,
           tier: proof.tier,
-          current_time: proof.currentTime,
         },
       },
     });

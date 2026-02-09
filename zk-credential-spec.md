@@ -143,10 +143,10 @@ The client must transmit `current_time` because the proof is bound to the exact 
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
     "proof": "<base64-encoded-proof>",
+    "current_time": 1707004800,
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "current_time": 1707004800
+      "tier": 1
     }
   }
 }
@@ -158,7 +158,8 @@ The client must transmit `current_time` because the proof is bound to the exact 
 | `suite` | Yes | Suite identifier so server selects correct verifier |
 | `kid` | Recommended | Key ID for key rotation (see §18) |
 | `proof` | Yes | Base64-encoded ZK proof |
-| `public_outputs` | Yes | Circuit outputs and prover-supplied inputs |
+| `current_time` | Yes | Unix timestamp used as public input during proof generation; server validates ±60s drift (§11.1) |
+| `public_outputs` | Yes | Circuit outputs |
 
 **`public_outputs` fields:**
 
@@ -166,7 +167,6 @@ The client must transmit `current_time` because the proof is bound to the exact 
 |-------|----------|-------------|
 | `origin_token` | Yes | Unlinkable rate-limiting token (circuit output) |
 | `tier` | Yes | Access level (circuit output) |
-| `current_time` | Yes | Unix timestamp used as public input during proof generation; server validates ±60s drift (§11.1) |
 
 ### 6.4 Response Envelope (Credential Issuance)
 
@@ -392,10 +392,10 @@ Content-Type: application/json
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
     "proof": "<base64-proof>",
+    "current_time": 1707004800,
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "current_time": 1707004800
+      "tier": 1
     }
   }
 }
@@ -410,7 +410,7 @@ The server constructs public inputs from its own configuration and the client-pr
 | Input | Source |
 |-------|--------|
 | `service_id` | Server configuration (see §10.4) |
-| `current_time` | From client's `public_outputs.current_time`; validated within ±60s of server clock (§11.1) |
+| `current_time` | From client's `zk_credential.current_time`; validated within ±60s of server clock (§11.1) |
 | `origin_id` | Computed from request URL per §10 |
 | `facilitator_pubkey` | Looked up by `kid` from request (see §18) |
 
@@ -500,9 +500,9 @@ The ZK proof MUST prove:
 
 ### 11.1 Clock Skew Tolerance
 
-The circuit uses `current_time` as a public input. The client chooses this value at proof generation time and transmits it in `public_outputs.current_time` (§6.3). The server uses the client-provided value to reconstruct public inputs for proof verification, but MUST validate it against the server's own clock:
+The circuit uses `current_time` as a public input. The client chooses this value at proof generation time and transmits it in `zk_credential.current_time` (§6.3). The server uses the client-provided value to reconstruct public inputs for proof verification, but MUST validate it against the server's own clock:
 
-- Servers MUST reject requests where `|public_outputs.current_time - server_clock| > 60 seconds`.
+- Servers MUST reject requests where `|zk_credential.current_time - server_clock| > 60 seconds`.
 - This drift check MUST occur **before** proof verification to avoid wasting computation on stale proofs.
 - Servers MAY include their current time in the 402 response for client synchronization:
   ```json
@@ -709,7 +709,7 @@ Server steps for requests with `zk_credential` in body:
 4. If body too large → `413 payload_too_large` (include `max_body_bytes`)
 5. Look up `facilitator_pubkey` using `kid` (see §18). If unknown → `400 invalid_proof`
 6. Compute `origin_id` from request URL per §10
-7. Extract `current_time` from client's `public_outputs.current_time`
+7. Extract `current_time` from client's `zk_credential.current_time`
 8. If `|current_time - server_clock| > 60s` → `400 invalid_proof` (clock drift exceeded)
 9. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
 10. Verify proof locally (no facilitator call needed)

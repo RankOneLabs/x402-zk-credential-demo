@@ -393,7 +393,8 @@ export class ZkCredentialMiddleware {
     suite: string;
     kid?: string;
     proofB64: string;
-    publicOutputs: { originToken: string; tier: number; currentTime: number };
+    currentTime: number;
+    publicOutputs: { originToken: string; tier: number };
   } | null {
     const body = req.body as Record<string, unknown> | undefined;
     const zkCredential = (body as { zk_credential?: Record<string, unknown> } | undefined)?.zk_credential;
@@ -404,6 +405,7 @@ export class ZkCredentialMiddleware {
     const suite = zkCredential.suite;
     const kid = zkCredential.kid;
     const proofB64 = zkCredential.proof;
+    const currentTime = zkCredential.current_time;
     const publicOutputs = zkCredential.public_outputs as Record<string, unknown> | undefined;
 
     if (typeof suite !== 'string' || typeof proofB64 !== 'string' || !publicOutputs) {
@@ -412,7 +414,6 @@ export class ZkCredentialMiddleware {
 
     const originToken = publicOutputs.origin_token;
     const tier = publicOutputs.tier;
-    const currentTime = publicOutputs.current_time;
 
     if (typeof originToken !== 'string' || typeof tier !== 'number') {
       return null;
@@ -427,7 +428,8 @@ export class ZkCredentialMiddleware {
       suite,
       kid: typeof kid === 'string' ? kid : undefined,
       proofB64,
-      publicOutputs: { originToken, tier, currentTime },
+      currentTime,
+      publicOutputs: { originToken, tier },
     };
   }
 
@@ -494,7 +496,7 @@ export class ZkCredentialMiddleware {
     const originId = this.computeOriginId(req);
     const serverTime = BigInt(Math.floor(Date.now() / 1000));
     // Use the current_time from the presentation (matches the proof)
-    const proofTime = BigInt(presentation.publicOutputs.currentTime);
+    const proofTime = BigInt(presentation.currentTime);
 
     // Validate the proof's current_time is within acceptable drift (±60 seconds)
     const MAX_TIME_DRIFT = 60n;

@@ -85,10 +85,10 @@ function createValidBody(
       version: '0.1.0',
       suite,
       proof: Buffer.from([1, 2, 3, 4]).toString('base64'),
+      current_time: currentTime,
       public_outputs: {
         origin_token: originToken,
         tier,
-        current_time: currentTime,
       },
     },
   };
