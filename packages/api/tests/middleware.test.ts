@@ -380,6 +380,80 @@ describe('ZkCredentialMiddleware', () => {
     });
   });
 
+  describe('verifyRequest - clock drift validation', () => {
+    it('should reject current_time too far in the past', async () => {
+      const middleware = new ZkCredentialMiddleware({
+        ...defaultConfig,
+        skipProofVerification: true,
+      });
+      const staleTime = Math.floor(Date.now() / 1000) - 120; // 120s ago, exceeds ±60s
+      const headers = createValidHeaders('0xabc', 1, { currentTime: staleTime });
+      const req = createMockRequest(headers);
+
+      const result = await middleware.verifyRequest(req as Request);
+
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.errorCode).toBe('invalid_proof');
+        expect(result.message).toContain('drift');
+      }
+    });
+
+    it('should reject current_time too far in the future', async () => {
+      const middleware = new ZkCredentialMiddleware({
+        ...defaultConfig,
+        skipProofVerification: true,
+      });
+      const futureTime = Math.floor(Date.now() / 1000) + 120; // 120s ahead
+      const headers = createValidHeaders('0xabc', 1, { currentTime: futureTime });
+      const req = createMockRequest(headers);
+
+      const result = await middleware.verifyRequest(req as Request);
+
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.errorCode).toBe('invalid_proof');
+        expect(result.message).toContain('drift');
+      }
+    });
+
+    it('should accept current_time within drift tolerance', async () => {
+      const middleware = new ZkCredentialMiddleware({
+        ...defaultConfig,
+        skipProofVerification: true,
+      });
+      // 30s ago — well within ±60s
+      const recentTime = Math.floor(Date.now() / 1000) - 30;
+      const headers = createValidHeaders('0xabc', 1, { currentTime: recentTime });
+      const req = createMockRequest(headers);
+
+      const result = await middleware.verifyRequest(req as Request);
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('should not attempt proof verification when drift exceeds tolerance', async () => {
+      // Use skipProofVerification: false — if drift check works, proof verification
+      // should never be reached (and would fail anyway with a dummy proof)
+      const middleware = new ZkCredentialMiddleware({
+        ...defaultConfig,
+        skipProofVerification: false,
+      });
+      const staleTime = Math.floor(Date.now() / 1000) - 120;
+      const headers = createValidHeaders('0xabc', 1, { currentTime: staleTime });
+      const req = createMockRequest(headers);
+
+      const result = await middleware.verifyRequest(req as Request);
+
+      // Should be rejected by drift check, not by proof verification failure
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.errorCode).toBe('invalid_proof');
+        expect(result.message).toContain('drift');
+      }
+    });
+  });
+
   describeZK('verifyRequest - public input validation', () => {
     it('should reject mismatched service_id', async () => {
       const middleware = new ZkCredentialMiddleware({
