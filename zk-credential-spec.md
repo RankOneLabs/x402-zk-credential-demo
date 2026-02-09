@@ -763,7 +763,7 @@ Server steps for requests without `zk_credential`:
 | Issuer key compromise | Key rotation, short credential expiry |
 | Credential theft | Short expiry, `identity_limit` limit |
 | Replay attacks | `identity_index` in token derivation |
-| Time manipulation | Server provides `current_time`; circuit enforces `expires_at >= current_time` privately (server cannot distinguish expiry from other failures) |
+| Time manipulation | Client provides `current_time`; server rejects if drift from its own clock exceeds ±60s; circuit enforces `expires_at >= current_time` privately (server cannot distinguish expiry from other failures) |
 | DoS via verification | Rate limiting, proof size limits |
 | Cross-server replay | `origin_id` includes host |
 
