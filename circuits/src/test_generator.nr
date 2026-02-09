@@ -75,9 +75,9 @@ fn test_poseidon6() {
     
     let msg = bn254::hash_6(inputs);
     
-    // Expected value will be verified against TypeScript poseidon6 output
-    // This test ensures cross-language hash compatibility
-    assert(msg != 0, "Poseidon hash_6 should produce non-zero output");
+    // Expected from TypeScript poseidon6: matches poseidon-lite/circomlibjs
+    let expected: Field = 2541811923401058266366024049633353933549547690240374137055738783998965528825;
+    assert(msg == expected, "Poseidon hash_6 mismatch with TypeScript");
 }
 
 #[test]
