@@ -621,15 +621,16 @@ Proofs are opaque binary blobs, base64-encoded:
 
 | Code | HTTP | Meaning |
 |------|------|---------|
-| `credential_expired` | 402 | Credential expired, re-enter payment flow |
 | `credential_missing` | 402 | No credential provided |
 | `tier_insufficient` | 402 | Tier below requirement |
 | `unsupported_suite` | 400 | Suite not supported |
-| `invalid_proof` | 400 | Proof verification failed or malformed |
+| `invalid_proof` | 400 | Proof verification failed (includes expired credentials, see note below) |
 | `payload_too_large` | 413 | Proof body exceeds size limit |
 | `origin_mismatch` | 400 | Proof origin binding does not match request URL (if detected) |
 | `unsupported_media_type` | 415 | Content-Type not supported |
 | `rate_limited` | 429 | Origin token rate limited |
+
+> **Note:** Because `expires_at` is a private input enforced inside the circuit, the server cannot distinguish an expired credential from other proof failures. Both result in `invalid_proof`. Clients SHOULD track credential expiry locally and re-enter the payment flow before attempting to prove with an expired credential.
 
 ### 14.2 Structured Error Envelope
 
@@ -637,9 +638,9 @@ All error responses use this JSON structure:
 
 ```json
 {
-  "error": "credential_expired",
-  "code": 402,
-  "message": "Credential expired at 1706745600",
+  "error": "invalid_proof",
+  "code": 400,
+  "message": "Proof verification failed",
   "retry_after": 0,
   "credential_endpoint": "https://issuer.example.com/credentials/issue",
   "payment_requirements": { ... }
@@ -658,23 +659,28 @@ All error responses use this JSON structure:
 
 ### 14.3 Expired Credentials
 
-When credential is expired:
+Credential expiry (`expires_at >= current_time`) is enforced inside the circuit as a private constraint. The server never sees `expires_at` — an expired credential simply produces an invalid proof, returned as `invalid_proof`.
+
+**Client responsibility:** Clients MUST track `expires_at` locally and initiate a new payment flow before the credential expires. When a client detects local expiry:
+
+1. Discard the expired credential
+2. Re-discover the API (GET the protected endpoint to receive 402 with payment requirements)
+3. Complete a new payment to obtain a fresh credential
+
+**Server behavior:** If a proof fails verification for any reason (expired, wrong service, bad signature, etc.), the server returns:
 
 ```
-HTTP/1.1 402 Payment Required
+HTTP/1.1 400 Bad Request
 Content-Type: application/json
 
 {
-  "error": "credential_expired",
-  "code": 402,
-  "message": "Credential expired",
-  "payment_requirements": {
-    "x402Version": 2,
-    "accepts": [...],
-    "extensions": { "zk_credential": { ... } }
-  }
+  "error": "invalid_proof",
+  "code": 400,
+  "message": "Proof verification failed"
 }
 ```
+
+The server MAY include `payment_requirements` in the error response to help clients re-enter the payment flow.
 
 ---
 
@@ -741,7 +747,7 @@ Server steps for requests without `zk_credential`:
 | Issuer key compromise | Key rotation, short credential expiry |
 | Credential theft | Short expiry, `identity_limit` limit |
 | Replay attacks | `identity_index` in token derivation |
-| Time manipulation | Server provides `current_time`; circuit enforces private `expires_at` (expiry check with bounded clock drift) |
+| Time manipulation | Server provides `current_time`; circuit enforces `expires_at >= current_time` privately (server cannot distinguish expiry from other failures) |
 | DoS via verification | Rate limiting, proof size limits |
 | Cross-server replay | `origin_id` includes host |
 

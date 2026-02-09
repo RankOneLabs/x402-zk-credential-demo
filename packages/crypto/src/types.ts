@@ -170,7 +170,6 @@ export interface X402PaymentResponse {
 
 /** ZK credential error codes per spec §14 */
 export type ZKCredentialErrorCode =
-  | 'credential_expired'      // 402
   | 'credential_missing'      // 402
   | 'tier_insufficient'       // 402
   | 'unsupported_suite'       // 400
@@ -201,7 +200,6 @@ export interface ZKCredentialError {
 
 /** Map error codes to HTTP status */
 export const ERROR_CODE_TO_STATUS: Record<ZKCredentialErrorCode, number> = {
-  credential_expired: 402,
   credential_missing: 402,
   tier_insufficient: 402,
   unsupported_suite: 400,
