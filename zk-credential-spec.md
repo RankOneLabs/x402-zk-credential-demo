@@ -132,7 +132,7 @@ This is an **intentional deviation** from the "one request after payment" patter
 
 ### 6.3 Request Envelope (Proof Identity)
 
-Clients send only the proof and public outputs. Public inputs are server-derived (see §9.2).
+Clients send only the proof and public outputs. Public inputs (including `current_time`) are server-derived (see §9.2).
 
 ```json
 {
@@ -155,7 +155,7 @@ Clients send only the proof and public outputs. Public inputs are server-derived
 | `suite` | Yes | Suite identifier so server selects correct verifier |
 | `kid` | Recommended | Key ID for key rotation (see §18) |
 | `proof` | Yes | Base64-encoded ZK proof |
-| `public_outputs` | Yes | Circuit outputs extracted from proof |
+| `public_outputs` | Yes | Circuit public outputs: `origin_token` and `tier` |
 
 ### 6.4 Response Envelope (Credential Issuance)
 
@@ -486,7 +486,7 @@ The ZK proof MUST prove:
 
 ### 11.1 Clock Skew Tolerance
 
-The circuit uses `current_time` as a public input (server-provided). To handle clock drift:
+The circuit uses `current_time` as a public input (server-provided). The client must approximate the server's clock when generating the proof. To handle clock drift:
 
 - Servers SHOULD accept proofs where the proof's `current_time` is within **±60 seconds** of the server's clock.
 - Servers MAY include their current time in the 402 response for client synchronization:

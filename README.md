@@ -164,8 +164,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
     "proof": "<base64-proof>",
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "expires_at": 1707004800
+      "tier": 1
     }
   }
 }
