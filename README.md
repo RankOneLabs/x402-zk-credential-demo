@@ -2,7 +2,7 @@
 
 > ⚠️ **PROOF OF CONCEPT** - This is a demonstration project for educational and research purposes only. It is NOT production-ready and should NOT be used in any production environment. The cryptographic implementations have not been audited, and the security guarantees are not verified.
 
-**Compliant with [x402 zk-credential spec v0.2.0](./zk-credential-spec.md)**
+**Compliant with [x402 zk-credential spec v0.1.0](./zk-credential-spec.md)**
 
 Anonymous credentials for x402 APIs using zero-knowledge proofs.
 
@@ -145,7 +145,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
   ],
   "extensions": {
     "zk_credential": {
-      "version": "0.2.0",
+      "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
       "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04..."
     }
@@ -158,7 +158,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 ```json
 {
   "zk_credential": {
-    "version": "0.2.0",
+    "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
     "proof": "<base64-proof>",

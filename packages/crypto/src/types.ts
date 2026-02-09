@@ -1,6 +1,6 @@
 /**
  * Common types for cryptographic operations
- * Compliant with x402 zk-credential spec v0.2.0
+ * Compliant with x402 zk-credential spec v0.1.0
  * 
  * Uses @x402/core types for payment layer, extends with zk_credential types.
  */
@@ -90,7 +90,7 @@ export interface ProofOutputs {
 
 /** zk_credential extension in 402 response (spec §7) */
 export interface ZKCredentialExtension {
-  version: '0.2.0';
+  version: '0.1.0';
   credential_suites: ZKCredentialSuite[];
   facilitator_pubkey: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
   facilitator_url?: string;   // URL to send settlement requests

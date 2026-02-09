@@ -2,7 +2,7 @@
  * ZK Credential Verification Middleware
  * 
  * Verifies ZK proofs and enforces rate limits.
- * Compliant with x402 zk-credential spec v0.2.0
+ * Compliant with x402 zk-credential spec v0.1.0
  * 
  * **Security Note (Replay Protection):**
  * Proofs are valid within a time window (±60s) and could theoretically be
@@ -160,7 +160,7 @@ export class ZkCredentialMiddleware {
       ],
       extensions: {
         zk_credential: {
-          version: '0.2.0',
+          version: '0.1.0',
           credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
           facilitator_pubkey: this.getFacilitatorPubkeyPrefixed(),
           facilitator_url: this.config.facilitatorUrl,

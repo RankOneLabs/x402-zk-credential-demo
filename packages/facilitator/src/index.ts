@@ -1,7 +1,7 @@
 /**
  * @demo/facilitator
  * 
- * Credential facilitator server for ZK Credential (x402 spec v0.2.0).
+ * Credential facilitator server for ZK Credential (x402 spec v0.1.0).
  * Issues signed credentials after x402 payment verification.
  */
 

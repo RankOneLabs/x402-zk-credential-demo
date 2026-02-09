@@ -226,7 +226,7 @@ describe('End-to-End Flow', () => {
 
         // Verify zk_credential extension
         expect(discoveryData.extensions?.zk_credential).toBeDefined();
-        expect(discoveryData.extensions!.zk_credential!.version).toBe('0.2.0');
+        expect(discoveryData.extensions!.zk_credential!.version).toBe('0.1.0');
         expect(discoveryData.extensions!.zk_credential!.credential_suites).toContain('pedersen-schnorr-poseidon-ultrahonk');
 
         // Parse facilitator URL and payment details from 402 response

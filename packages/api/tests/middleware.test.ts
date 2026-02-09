@@ -80,7 +80,7 @@ function createValidBody(
 
   return {
     zk_credential: {
-      version: '0.2.0',
+      version: '0.1.0',
       suite,
       proof: Buffer.from([1, 2, 3, 4]).toString('base64'),
       public_outputs: {

@@ -2,7 +2,7 @@
  * Facilitator Express Server
  * 
  * HTTP server that issues credentials via REST API.
- * Compliant with x402 zk-credential spec v0.2.0
+ * Compliant with x402 zk-credential spec v0.1.0
  */
 
 import express, { type Request, type Response, type NextFunction } from 'express';
