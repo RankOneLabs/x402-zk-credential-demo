@@ -644,7 +644,7 @@ export class ZkCredentialClient {
         originToken: originToken,
         tier: Number(hexToBigInt(tier)),
         currentTime: Number(currentTime),
-        cachedUntil: credential.expiresAt,
+        cachedUntil: Math.min(credential.expiresAt, Number(currentTime) + 60),
         meta: {
           serviceId: credential.serviceId,
           originId: originId.toString(),

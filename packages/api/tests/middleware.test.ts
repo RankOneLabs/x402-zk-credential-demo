@@ -74,9 +74,11 @@ function createValidBody(
   tier: number,
   overrides: {
     suite?: string;
+    currentTime?: number;
   } = {}
 ): Record<string, unknown> {
   const suite = overrides.suite ?? 'pedersen-schnorr-poseidon-ultrahonk';
+  const currentTime = overrides.currentTime ?? Math.floor(Date.now() / 1000);
 
   return {
     zk_credential: {
@@ -86,6 +88,7 @@ function createValidBody(
       public_outputs: {
         origin_token: originToken,
         tier,
+        current_time: currentTime,
       },
     },
   };

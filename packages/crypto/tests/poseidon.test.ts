@@ -29,8 +29,8 @@ describe('Poseidon Hash', () => {
   });
 
   it('should hash six elements with deterministic output', () => {
-    // poseidon6([1,2,3,4,5,6]) reference vector — used for credential signature
-    // message hash (bn254::hash_6 in circuit). Pin to prevent parameter/order drift.
+    // poseidon6([1,2,3,4,5,6]) reference vector from poseidon-lite.
+    // Pins the 6-arity Poseidon parameterization to prevent accidental drift.
     const result = poseidonHash6(1n, 2n, 3n, 4n, 5n, 6n);
     expect(result.toString()).toBe(
       '20400040500897583745843009878988256314335038853985262692600694741116813247201'

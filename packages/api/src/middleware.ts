@@ -393,7 +393,7 @@ export class ZkCredentialMiddleware {
     suite: string;
     kid?: string;
     proofB64: string;
-    publicOutputs: { originToken: string; tier: number; currentTime?: number };
+    publicOutputs: { originToken: string; tier: number; currentTime: number };
   } | null {
     const body = req.body as Record<string, unknown> | undefined;
     const zkCredential = (body as { zk_credential?: Record<string, unknown> } | undefined)?.zk_credential;
@@ -417,8 +417,9 @@ export class ZkCredentialMiddleware {
     if (typeof originToken !== 'string' || typeof tier !== 'number') {
       return null;
     }
-    // current_time is optional; if present it must be a number
-    if (currentTime !== undefined && typeof currentTime !== 'number') {
+    // current_time is required — the proof is bound to the exact value used during
+    // generation, so the server cannot substitute its own clock (§6.3, §11.1)
+    if (typeof currentTime !== 'number') {
       return null;
     }
 
@@ -426,7 +427,7 @@ export class ZkCredentialMiddleware {
       suite,
       kid: typeof kid === 'string' ? kid : undefined,
       proofB64,
-      publicOutputs: { originToken, tier, currentTime: typeof currentTime === 'number' ? currentTime : undefined },
+      publicOutputs: { originToken, tier, currentTime },
     };
   }
 
@@ -492,19 +493,14 @@ export class ZkCredentialMiddleware {
 
     const originId = this.computeOriginId(req);
     const serverTime = BigInt(Math.floor(Date.now() / 1000));
-    // Use the current_time from the presentation if provided (matches the proof),
-    // otherwise fall back to server time
-    const proofTime = presentation.publicOutputs.currentTime != null
-      ? BigInt(presentation.publicOutputs.currentTime)
-      : serverTime;
+    // Use the current_time from the presentation (matches the proof)
+    const proofTime = BigInt(presentation.publicOutputs.currentTime);
 
     // Validate the proof's current_time is within acceptable drift (±60 seconds)
-    if (presentation.publicOutputs.currentTime != null) {
-      const MAX_TIME_DRIFT = 60n;
-      const timeDiff = serverTime > proofTime ? serverTime - proofTime : proofTime - serverTime;
-      if (timeDiff > MAX_TIME_DRIFT) {
-        return { valid: false, errorCode: 'invalid_proof', message: `Proof time drift too large: ${timeDiff}s` };
-      }
+    const MAX_TIME_DRIFT = 60n;
+    const timeDiff = serverTime > proofTime ? serverTime - proofTime : proofTime - serverTime;
+    if (timeDiff > MAX_TIME_DRIFT) {
+      return { valid: false, errorCode: 'invalid_proof', message: `Proof time drift too large: ${timeDiff}s` };
     }
 
     // Skip proof verification in development mode

@@ -13,7 +13,7 @@ export interface CachedProof {
   tier: number;
   /** The current_time used when generating the proof (public input) */
   currentTime: number;
-  /** When this cache entry expires (set by caller, e.g. credential expiresAt) */
+  /** When this cache entry expires (min of credential expiry and current_time + allowed_drift) */
   cachedUntil: number;
   /** Cache key components for debugging */
   meta: {

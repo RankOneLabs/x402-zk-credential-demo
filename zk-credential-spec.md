@@ -132,7 +132,9 @@ This is an **intentional deviation** from the "one request after payment" patter
 
 ### 6.3 Request Envelope (Proof Identity)
 
-Clients send only the proof and public outputs. Public inputs (including `current_time`) are server-derived (see §9.2).
+Clients send the proof, public outputs, and the `current_time` used during proof generation. All other public inputs are server-derived (see §9.2).
+
+The client must transmit `current_time` because the proof is bound to the exact value used during generation. The server uses this value to reconstruct the proof's public inputs, then validates that it falls within ±60s of the server's own clock (see §11.1).
 
 ```json
 {
@@ -143,7 +145,8 @@ Clients send only the proof and public outputs. Public inputs (including `curren
     "proof": "<base64-encoded-proof>",
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1
+      "tier": 1,
+      "current_time": 1707004800
     }
   }
 }
@@ -155,7 +158,15 @@ Clients send only the proof and public outputs. Public inputs (including `curren
 | `suite` | Yes | Suite identifier so server selects correct verifier |
 | `kid` | Recommended | Key ID for key rotation (see §18) |
 | `proof` | Yes | Base64-encoded ZK proof |
-| `public_outputs` | Yes | Circuit public outputs: `origin_token` and `tier` |
+| `public_outputs` | Yes | Circuit outputs and prover-supplied inputs |
+
+**`public_outputs` fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `origin_token` | Yes | Unlinkable rate-limiting token (circuit output) |
+| `tier` | Yes | Access level (circuit output) |
+| `current_time` | Yes | Unix timestamp used as public input during proof generation; server validates ±60s drift (§11.1) |
 
 ### 6.4 Response Envelope (Credential Issuance)
 
@@ -383,7 +394,8 @@ Content-Type: application/json
     "proof": "<base64-proof>",
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1
+      "tier": 1,
+      "current_time": 1707004800
     }
   }
 }
@@ -393,14 +405,16 @@ The `kid` field identifies which issuer key was used to sign the credential. The
 
 ### 9.2 Proof Public Inputs
 
-The server derives all public inputs — clients do not send them:
+The server constructs public inputs from its own configuration and the client-provided `current_time`:
 
 | Input | Source |
 |-------|--------|
 | `service_id` | Server configuration (see §10.4) |
-| `current_time` | Server clock (unix timestamp) |
+| `current_time` | From client's `public_outputs.current_time`; validated within ±60s of server clock (§11.1) |
 | `origin_id` | Computed from request URL per §10 |
 | `facilitator_pubkey` | Looked up by `kid` from request (see §18) |
+
+> **Why `current_time` is client-provided:** The proof is cryptographically bound to the exact `current_time` used during generation. If the server substituted its own clock value, verification would fail whenever the two clocks differ. Instead, the client transmits the value it used, and the server validates it is within acceptable drift before using it for verification.
 
 ### 9.3 Proof Public Outputs
 
@@ -486,14 +500,15 @@ The ZK proof MUST prove:
 
 ### 11.1 Clock Skew Tolerance
 
-The circuit uses `current_time` as a public input (server-provided). The client must approximate the server's clock when generating the proof. To handle clock drift:
+The circuit uses `current_time` as a public input. The client chooses this value at proof generation time and transmits it in `public_outputs.current_time` (§6.3). The server uses the client-provided value to reconstruct public inputs for proof verification, but MUST validate it against the server's own clock:
 
-- Servers SHOULD accept proofs where the proof's `current_time` is within **±60 seconds** of the server's clock.
+- Servers MUST reject requests where `|public_outputs.current_time - server_clock| > 60 seconds`.
+- This drift check MUST occur **before** proof verification to avoid wasting computation on stale proofs.
 - Servers MAY include their current time in the 402 response for client synchronization:
   ```json
   { "server_time": 1707004800, ... }
   ```
-- Clients generating proofs SHOULD use a recent server-provided timestamp when available.
+- Clients generating proofs SHOULD use a recent server-provided timestamp when available, falling back to their own clock.
 
 ---
 
@@ -694,16 +709,17 @@ Server steps for requests with `zk_credential` in body:
 4. If body too large → `413 payload_too_large` (include `max_body_bytes`)
 5. Look up `facilitator_pubkey` using `kid` (see §18). If unknown → `400 invalid_proof`
 6. Compute `origin_id` from request URL per §10
-7. Get `current_time` from server clock
-8. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
-9. Verify proof locally (no facilitator call needed)
-10. If invalid → `400 invalid_proof`
-11. Extract outputs: `(origin_token, tier)`
-12. Check rate limit for `origin_token`
-13. If exceeded → `429 rate_limited`
-14. Check `tier` meets endpoint requirement
-15. If insufficient → `402 tier_insufficient`
-16. Allow request
+7. Extract `current_time` from client's `public_outputs.current_time`
+8. If `|current_time - server_clock| > 60s` → `400 invalid_proof` (clock drift exceeded)
+9. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
+10. Verify proof locally (no facilitator call needed)
+11. If invalid → `400 invalid_proof`
+12. Extract outputs: `(origin_token, tier)`
+13. Check rate limit for `origin_token`
+14. If exceeded → `429 rate_limited`
+15. Check `tier` meets endpoint requirement
+16. If insufficient → `402 tier_insufficient`
+17. Allow request
 
 Server steps for requests without `zk_credential`:
 
