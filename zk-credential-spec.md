@@ -996,6 +996,7 @@ Content-Type: application/json
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
     "proof": "<base64-encoded-proof>",
+    "current_time": 1707004800,
     "public_outputs": {
       "origin_token": "0x...",
       "tier": 1

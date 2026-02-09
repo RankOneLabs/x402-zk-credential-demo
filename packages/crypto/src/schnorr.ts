@@ -17,8 +17,6 @@ import { randomFieldElement } from './utils.js';
 // This is the order of the group (approx Fq) used for signature calculation s
 export const GRUMPKIN_SCALAR_MODULUS = 21888242871839275222246405745257275088696311157297823662689037894645226208583n;
 
-// Limit for Barretenberg Fr inputs
-// const BN254_FR_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
 let bbInitialized = false;
 let bb: BarretenbergSync;
@@ -34,10 +32,9 @@ async function ensureBb(): Promise<BarretenbergSync> {
 
 /**
  * Generate a random Grumpkin scalar
- * Capped at BN254_FR_MODULUS to ensure compatibility with bb.js Fr inputs
+ * Uses randomFieldElement() which returns values < FIELD_MODULUS (BN254 Fr)
  */
 export function randomGrumpkinScalar(): bigint {
-  // Use util which returns values < BN254_FR_MODULUS
   return randomFieldElement();
 }
 
