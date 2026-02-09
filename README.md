@@ -126,7 +126,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
 1. **Discovery:** Client requests protected resource → receives 402 with `extensions.zk_credential`
 2. **Settlement:** Client sends payment + commitment (body) → receives credential
-3. **Identity:** Client POSTs proof in request body (`zk_credential` envelope)
+3. **Presentation:** Client presents ZK proof by POSTing it in the request body (`zk_credential` envelope)
 4. **Verification:** Server verifies ZK proof and applies rate limiting
 
 ### 402 Response Format (spec §7)
