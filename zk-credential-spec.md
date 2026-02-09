@@ -413,7 +413,6 @@ The proof produces:
 |--------|---------|
 | `origin_token` | Unlinkable rate-limiting token |
 | `tier` | Access level for authorization |
-| `tier` | Access level for authorization |
 
 ---
 
