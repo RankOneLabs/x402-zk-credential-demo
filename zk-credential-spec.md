@@ -143,8 +143,7 @@ Clients send only the proof and public outputs. Public inputs are server-derived
     "proof": "<base64-encoded-proof>",
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "expires_at": 1707004800
+      "tier": 1
     }
   }
 }
@@ -387,8 +386,7 @@ Content-Type: application/json
     "proof": "<base64-proof>",
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "expires_at": 1707004800
+      "tier": 1
     }
   }
 }
@@ -415,7 +413,7 @@ The proof produces:
 |--------|---------|
 | `origin_token` | Unlinkable rate-limiting token |
 | `tier` | Access level for authorization |
-| `expires_at` | Credential expiry (server verifies freshness) |
+| `tier` | Access level for authorization |
 
 ---
 
@@ -488,7 +486,7 @@ The ZK proof MUST prove:
 
 6. **Origin token derivation** — `origin_token = hash(nullifier_seed, origin_id, presentation_index)`
 
-**Public outputs:** `(origin_token, tier, expires_at)`
+**Public outputs:** `(origin_token, tier)`
 
 ### 11.1 Clock Skew Tolerance
 
@@ -698,9 +696,8 @@ Server steps for requests with `zk_credential` in body:
 8. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
 9. Verify proof locally (no facilitator call needed)
 10. If invalid → `400 invalid_proof`
-11. Extract outputs: `(origin_token, tier, expires_at)`
-12. If `expires_at < current_time - 60` → `402 credential_expired` (with 60s tolerance)
-13. Check rate limit for `origin_token`
+11. Extract outputs: `(origin_token, tier)`
+12. Check rate limit for `origin_token`
 14. If exceeded → `429 rate_limited`
 15. Check `tier` meets endpoint requirement
 16. If insufficient → `402 tier_insufficient`
