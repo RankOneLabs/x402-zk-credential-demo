@@ -174,7 +174,6 @@ Clients send only the proof and public outputs. Public inputs are server-derived
       "service_id": "0xabc123...",
       "tier": 1,
       "identity_limit": 1000,
-      "issued_at": 1706918400,
       "expires_at": 1707004800,
       "commitment": "0x...",
       "signature": "0x..."
