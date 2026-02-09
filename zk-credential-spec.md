@@ -1032,7 +1032,7 @@ If credential redemption occurred in the same request as payment, the server wou
 - Credential issuance piggybacks on existing settlement response
 
 **`expires_at` checked inside circuit:**
-The circuit checks `expires_at >= current_time` internally. This keeps `expires_at` private (not leaked as a public output) while still enforcing freshness: the client-provided `zk_credential.current_time` is a private witness, and the server validates that this claimed time is within an acceptable drift of its own clock.
+The circuit checks `expires_at >= current_time` internally. This keeps `expires_at` private (not leaked as a public output) while still enforcing freshness: the client-provided `zk_credential.current_time` is a public input to the circuit, while `expires_at` remains private, and the server validates that this client-supplied time is within an acceptable drift of its own clock.
 
 **`identity_limit` naming:**
 Clarifies semantic: maximum distinct identities derivable, not "uses". Circuit enforces `identity_index < identity_limit`.
