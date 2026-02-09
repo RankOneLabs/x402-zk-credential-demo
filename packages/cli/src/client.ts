@@ -566,7 +566,6 @@ export class ZkCredentialClient {
         public_outputs: {
           origin_token: proof.originToken,
           tier: proof.tier,
-          expires_at: proof.expiresAt,
           current_time: proof.currentTime,
         },
       },
@@ -634,10 +633,9 @@ export class ZkCredentialClient {
       console.log(`[Client] Proof size: ${proof.length} bytes, ${publicInputs.length} public inputs`);
 
       // Extract outputs from public inputs
-      // Layout: [service_id, current_time, origin_id, facilitator_pubkey_x, facilitator_pubkey_y, origin_token, tier, expires_at]
+      // Layout: [service_id, current_time, origin_id, facilitator_pubkey_x, facilitator_pubkey_y, origin_token, tier]
       const originToken = publicInputs[5];
       const tier = publicInputs[6];
-      const expiresAt = publicInputs[7];
 
       const proofB64 = Buffer.from(proof).toString('base64');
 
@@ -645,8 +643,8 @@ export class ZkCredentialClient {
         proof: proofB64,
         originToken: originToken,
         tier: Number(hexToBigInt(tier)),
-        expiresAt: Number(hexToBigInt(expiresAt ?? '0x0')),
         currentTime: Number(currentTime),
+        cachedUntil: credential.expiresAt,
         meta: {
           serviceId: credential.serviceId,
           originId: originId.toString(),

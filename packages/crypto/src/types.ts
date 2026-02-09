@@ -82,7 +82,6 @@ export interface PublicInputs {
 export interface ProofOutputs {
   originToken: bigint;
   tier: number;
-  expiresAt: number;
 }
 
 // =============================================================================

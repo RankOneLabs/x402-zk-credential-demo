@@ -74,11 +74,9 @@ function createValidBody(
   tier: number,
   overrides: {
     suite?: string;
-    expiresAt?: number;
   } = {}
 ): Record<string, unknown> {
   const suite = overrides.suite ?? 'pedersen-schnorr-poseidon-ultrahonk';
-  const expiresAt = overrides.expiresAt ?? Math.floor(Date.now() / 1000) + 60;
 
   return {
     zk_credential: {
@@ -88,7 +86,6 @@ function createValidBody(
       public_outputs: {
         origin_token: originToken,
         tier,
-        expires_at: expiresAt,
       },
     },
   };
@@ -461,26 +458,6 @@ describe('ZkCredentialMiddleware', () => {
       expect(result.valid).toBe(false);
       if (!result.valid) {
         expect(result.errorCode).toBe('invalid_proof');
-      }
-    });
-  });
-
-  describe('verifyRequest - expiry validation', () => {
-    it('should reject expired credential', async () => {
-      const middleware = new ZkCredentialMiddleware({
-        ...defaultConfig,
-        skipProofVerification: true,
-      });
-      const body = createValidBody('0xabc', 1, {
-        expiresAt: Math.floor(Date.now() / 1000) - 120,
-      });
-      const req = createMockRequest(body);
-
-      const result = await middleware.verifyRequest(req as Request);
-
-      expect(result.valid).toBe(false);
-      if (!result.valid) {
-        expect(result.errorCode).toBe('credential_expired');
       }
     });
   });

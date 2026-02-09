@@ -11,10 +11,10 @@ export interface CachedProof {
   originToken: string;
   /** Tier (public output) */
   tier: number;
-  /** Expiration timestamp */
-  expiresAt: number;
   /** The current_time used when generating the proof (public input) */
   currentTime: number;
+  /** When this cache entry expires (set by caller, e.g. credential expiresAt) */
+  cachedUntil: number;
   /** Cache key components for debugging */
   meta: {
     serviceId: string;
@@ -61,7 +61,7 @@ export class ProofCache {
     }
 
     // Check expiration
-    if (cached.expiresAt < Math.floor(Date.now() / 1000)) {
+    if (cached.cachedUntil < Math.floor(Date.now() / 1000)) {
       this.cache.delete(key);
       return undefined;
     }
@@ -101,7 +101,7 @@ export class ProofCache {
 
     // Remove expired
     for (const [key, value] of this.cache) {
-      if (value.expiresAt < now) {
+      if (value.cachedUntil < now) {
         this.cache.delete(key);
         pruned++;
       }

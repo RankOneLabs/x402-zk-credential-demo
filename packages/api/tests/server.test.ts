@@ -16,7 +16,6 @@ function createZkBody(originToken: string, tier: number) {
       public_outputs: {
         origin_token: originToken,
         tier,
-        expires_at: Math.floor(Date.now() / 1000) + 60,
       },
     },
   };
@@ -83,7 +82,7 @@ describe('API Server', () => {
           version: '0.2.0',
           suite: 'unknown-scheme',
           proof: Buffer.from([1]).toString('base64'),
-          public_outputs: { origin_token: '0xabc', tier: 1, expires_at: Math.floor(Date.now() / 1000) + 60 },
+          public_outputs: { origin_token: '0xabc', tier: 1 },
         },
       };
 

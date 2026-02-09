@@ -393,7 +393,7 @@ export class ZkCredentialMiddleware {
     suite: string;
     kid?: string;
     proofB64: string;
-    publicOutputs: { originToken: string; tier: number; expiresAt: number; currentTime?: number };
+    publicOutputs: { originToken: string; tier: number; currentTime?: number };
   } | null {
     const body = req.body as Record<string, unknown> | undefined;
     const zkCredential = (body as { zk_credential?: Record<string, unknown> } | undefined)?.zk_credential;
@@ -412,10 +412,9 @@ export class ZkCredentialMiddleware {
 
     const originToken = publicOutputs.origin_token;
     const tier = publicOutputs.tier;
-    const expiresAt = publicOutputs.expires_at;
     const currentTime = publicOutputs.current_time;
 
-    if (typeof originToken !== 'string' || typeof tier !== 'number' || typeof expiresAt !== 'number') {
+    if (typeof originToken !== 'string' || typeof tier !== 'number') {
       return null;
     }
     // current_time is optional; if present it must be a number
@@ -427,7 +426,7 @@ export class ZkCredentialMiddleware {
       suite,
       kid: typeof kid === 'string' ? kid : undefined,
       proofB64,
-      publicOutputs: { originToken, tier, expiresAt, currentTime: typeof currentTime === 'number' ? currentTime : undefined },
+      publicOutputs: { originToken, tier, currentTime: typeof currentTime === 'number' ? currentTime : undefined },
     };
   }
 
@@ -468,10 +467,9 @@ export class ZkCredentialMiddleware {
    * 3. Check suite support
    * 4. Construct public inputs: (service_id, current_time, origin_id, facilitator_pubkey)
    * 5. Verify proof
-   * 6. Extract outputs: (origin_token, tier, expires_at)
-   * 7. If expired → credential_expired
-   * 8. Check tier meets endpoint requirement
-   * 9. Return success (rate limiting handled by middleware)
+   * 6. Extract outputs: (origin_token, tier)
+   * 7. Check tier meets endpoint requirement
+   * 8. Return success (rate limiting handled by middleware)
    */
   async verifyRequest(req: Request): Promise<CredentialVerificationResult> {
     // Step 1-2: Parse request body
@@ -512,11 +510,7 @@ export class ZkCredentialMiddleware {
     // Skip proof verification in development mode
     if (this.config.skipProofVerification) {
       console.log(`[ZkCredential] Skipping proof verification (dev mode)`);
-      const { tier, originToken, expiresAt } = presentation.publicOutputs;
-
-      if (expiresAt < Number(serverTime - 60n)) {
-        return { valid: false, errorCode: 'credential_expired', message: 'Credential expired' };
-      }
+      const { tier, originToken } = presentation.publicOutputs;
 
       // Still check minimum tier requirement even in skip mode
       if (tier < (this.config.minTier ?? 0)) {
@@ -534,7 +528,6 @@ export class ZkCredentialMiddleware {
       bigIntToHex(this.config.facilitatorPubkey.y),
       presentation.publicOutputs.originToken,
       bigIntToHex(BigInt(presentation.publicOutputs.tier)),
-      bigIntToHex(BigInt(presentation.publicOutputs.expiresAt)),
     ];
 
     const proofData = {
@@ -553,11 +546,6 @@ export class ZkCredentialMiddleware {
       // Step 8: Extract outputs (origin_token, tier)
       const originToken = result.outputs?.originToken ?? '';
       const tier = result.outputs?.tier ?? 0;
-      const expiresAt = result.outputs?.expiresAt ?? 0;
-
-      if (expiresAt < Number(serverTime - 60n)) {
-        return { valid: false, errorCode: 'credential_expired', message: 'Credential expired' };
-      }
 
       // Step 10-11: Check minimum tier requirement
       if (tier < (this.config.minTier ?? 0)) {

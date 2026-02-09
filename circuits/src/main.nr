@@ -1,5 +1,5 @@
 // x402 ZK Credential Circuit
-// Proves: "I hold a valid credential for this service" while only revealing the credential's tier, expiry, and origin token publicly
+// Proves: "I hold a valid credential for this service" while only revealing the credential's tier and origin token publicly
 
 mod pedersen;
 mod schnorr;
@@ -38,8 +38,8 @@ fn main(
     
     // === Private inputs: Presentation context ===
     identity_index: Field,
-) -> pub (Field, Field, Field) {
-    // Returns: (origin_token, tier, expires_at)
+) -> pub (Field, Field) {
+    // Returns: (origin_token, tier)
     
     // 1. Verify Pedersen commitment opens correctly
     //    C = nullifier_seed * G + blinding_factor * H
@@ -75,8 +75,8 @@ fn main(
     // 7. Derive origin-bound token for rate limiting
     let origin_token = bn254::hash_3([nullifier_seed, origin_id, identity_index]);
     
-    // 8. Return tier and expiry for access control
-    (origin_token, cred_tier, cred_expires_at)
+    // 8. Return tier for access control (expiry enforced by assertion above)
+    (origin_token, cred_tier)
 }
 
 #[test]
