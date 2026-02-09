@@ -855,7 +855,6 @@ An implementation conforms to this specification if it:
 7. Returns correct error codes per §14
 8. Supports at least one registered suite
 9. Computes `origin_id` per §10
-10. Outputs `expires_at` from circuit per §11
 
 ---
 
@@ -867,7 +866,6 @@ Credential {
   service_id: Field
   tier: Field  
   identity_limit: Field
-  issued_at: Field
   expires_at: Field
   commitment: (Field, Field)  // Point
   signature: (Point, Scalar)  // Schnorr (R, s)
@@ -953,7 +951,6 @@ Content-Type: application/json
       "service_id": "0xabc123...",
       "tier": 1,
       "identity_limit": 1000,
-      "issued_at": 1706918400,
       "expires_at": 1707004800,
       "commitment": "0x04<x><y>",
       "signature": "0x<R_x><R_y><s>"
@@ -979,8 +976,7 @@ Content-Type: application/json
     "proof": "<base64-encoded-proof>",
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "expires_at": 1707004800
+      "tier": 1
     }
   }
 }
