@@ -424,6 +424,18 @@ export class ZkCredentialMiddleware {
       return null;
     }
 
+    // Validate numeric fields that will be converted to BigInt later.
+    // We require finite, non-negative safe integers to avoid runtime BigInt errors.
+    if (
+      !Number.isFinite(tier) ||
+      !Number.isSafeInteger(tier) ||
+      tier < 0 ||
+      !Number.isFinite(currentTime) ||
+      !Number.isSafeInteger(currentTime) ||
+      currentTime < 0
+    ) {
+      return null;
+    }
     return {
       suite,
       kid: typeof kid === 'string' ? kid : undefined,
