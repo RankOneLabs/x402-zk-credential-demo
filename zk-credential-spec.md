@@ -474,7 +474,7 @@ The ZK proof MUST prove:
 
 1. **Commitment opening** — Prover knows `(nullifier_seed, blinding_factor)` that open the credential's commitment
 
-2. **Valid signature** — Issuer's signature over `(service_id, tier, identity_limit, issued_at, expires_at, commitment)` is valid
+2. **Valid signature** — Issuer's signature over the credential's service binding, tier, identity limit, expiry, and commitment is valid
 
 3. **Service binding** — Credential's `service_id` matches public input
 
