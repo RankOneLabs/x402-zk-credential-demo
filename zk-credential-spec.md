@@ -317,7 +317,6 @@ Facilitator returns credential in settlement response body:
         "service_id": "0xabc123...",
         "tier": 1,
         "identity_limit": 1000,
-        "issued_at": 1706918400,
         "expires_at": 1707004800,
         "commitment": "0x...",
         "signature": "0x..."
@@ -357,7 +356,6 @@ Server returns credential in response body (not header):
 | `service_id` | Identifies the service/API |
 | `tier` | Access level (0, 1, 2, ...) — derived from payment amount |
 | `identity_limit` | Maximum distinct identities derivable from credential |
-| `issued_at` | Unix timestamp of issuance |
 | `expires_at` | Unix timestamp of expiration |
 | `commitment` | Client's commitment (echoed back) |
 | `signature` | Facilitator signature over all fields |
