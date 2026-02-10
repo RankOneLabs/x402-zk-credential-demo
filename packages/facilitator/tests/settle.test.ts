@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CredentialIssuer, type IssuerConfig, type TierConfig } from '../src/issuer.js';
 import type { SettlementRequest } from '../src/types.js';
 import type { PaymentPayload, PaymentRequirements, Point } from '@demo/crypto';
-import { toBase64Url, fromBase64Url, fieldToBytes } from '@demo/crypto';
+import { toBase64Url, fieldToBytes } from '@demo/crypto';
 
 // Mock the crypto module for consistent test results
 vi.mock('@demo/crypto', async (importOriginal) => {
