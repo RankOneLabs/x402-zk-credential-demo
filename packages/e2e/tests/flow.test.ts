@@ -5,7 +5,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { createApiServer } from '../../api/src/server.js';
 import { ZkCredentialClient } from '../../cli/src/client.js';
 import { createFacilitatorServer } from '../../facilitator/src/server.js';
-import { hexToBigInt, parseSchemePrefix, type X402WithZKCredentialResponse, type PaymentPayload, type PaymentRequirements } from '@demo/crypto';
+import { hexToBigInt, parseSchemePrefix, type X402WithZKCredentialResponse, type PaymentPayload, type PaymentRequirements, fromBase64Url, bytesToPoint, bigIntToHex, toBase64Url, fieldToBytes } from '@demo/crypto';
 // Import x402 client libs for payment payload creation
 import { x402Client } from '@x402/core/client';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
@@ -167,12 +167,14 @@ describe('End-to-End Flow', () => {
             credential_suites: string[];
         };
 
-        // Parse scheme-prefixed pubkey
-        const { value: pubkeyHex } = parseSchemePrefix(infoData.facilitator_pubkey);
-        const pubkeyBytes = pubkeyHex.startsWith('0x') ? pubkeyHex.slice(2) : pubkeyHex;
+        // Parse scheme-prefixed pubkey (base64url)
+        const { value: pubkeyB64 } = parseSchemePrefix(infoData.facilitator_pubkey);
+        const pubkeyBytes = fromBase64Url(pubkeyB64);
+        const pubkeyPoint = bytesToPoint(pubkeyBytes);
+
         facilitatorPubkey = {
-            x: '0x' + pubkeyBytes.slice(2, 66),
-            y: '0x' + pubkeyBytes.slice(66, 130),
+            x: bigIntToHex(pubkeyPoint.x),
+            y: bigIntToHex(pubkeyPoint.y),
         };
         console.log('Facilitator pubkey:', facilitatorPubkey);
 
@@ -182,7 +184,10 @@ describe('End-to-End Flow', () => {
         const wkData = await wkResponse.json() as any;
         expect(wkData.keys).toBeDefined();
         expect(wkData.keys[0].kid).toBe('e2e-test-key');
-        expect(wkData.keys[0].x).toBe(facilitatorPubkey.x);
+
+        // Verify JWK x/y are base64url encoded matching the pubkey
+        const expectedXB64 = toBase64Url(fieldToBytes(pubkeyPoint.x));
+        expect(wkData.keys[0].x).toBe(expectedXB64);
 
         // 2. Start API
         console.log('Starting API Server...');
@@ -224,13 +229,13 @@ describe('End-to-End Flow', () => {
         expect(discoveryData.accepts[0].scheme).toBe('exact');
         expect(discoveryData.accepts[0].asset).toBe(usdcAddress);
 
-        // Verify zk_credential extension
-        expect(discoveryData.extensions?.zk_credential).toBeDefined();
-        expect(discoveryData.extensions!.zk_credential!.version).toBe('0.1.0');
-        expect(discoveryData.extensions!.zk_credential!.credential_suites).toContain('pedersen-schnorr-poseidon-ultrahonk');
+        // Verify zk-credential extension
+        expect(discoveryData.extensions?.['zk-credential']).toBeDefined();
+        expect(discoveryData.extensions!['zk-credential']!.version).toBe('0.1.0');
+        expect(discoveryData.extensions!['zk-credential']!.credential_suites).toContain('pedersen-schnorr-poseidon-ultrahonk');
 
         // Parse facilitator URL and payment details from 402 response
-        const zkCredential = discoveryData.extensions!.zk_credential!;
+        const zkCredential = discoveryData.extensions!['zk-credential']!;
         const paymentReqs = discoveryData.accepts[0];
         const facilitatorUrl = zkCredential.facilitator_url || `http://localhost:${FACILITATOR_PORT}/settle`;
 
@@ -329,7 +334,7 @@ describe('End-to-End Flow', () => {
         });
         expect(storedCredential.kid).toBe('e2e-test-key');
 
-        // 5. Access Protected API with zk_credential body presentation
+        // 5. Access Protected API with zk-credential body presentation
         console.log('Accessing protected API with ZK proof...');
         const response = await client.makeAuthenticatedRequest(
             `http://localhost:${API_PORT}/api/whoami`

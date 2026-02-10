@@ -943,7 +943,7 @@ Content-Type: application/json
     "zk-credential": {
       "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
-      "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04..."
+      "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:<base64url-pubkey>",
     }
   }
 }
@@ -962,7 +962,7 @@ Content-Type: application/json
   },
   "extensions": {
     "zk-credential": {
-      "commitment": "pedersen-schnorr-poseidon-ultrahonk:0x..."
+      "commitment": "pedersen-schnorr-poseidon-ultrahonk:<base64url-commitment>"
     }
   }
 }

@@ -92,7 +92,7 @@ export interface ProofOutputs {
 export interface ZKCredentialExtension {
   version: '0.1.0';
   credential_suites: ZKCredentialSuite[];
-  facilitator_pubkey: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
+  facilitator_pubkey: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:<base64url>"
   facilitator_url?: string;   // URL to send settlement requests
   max_credential_ttl?: number;
 }
@@ -103,7 +103,7 @@ export interface ZKCredentialExtension {
  */
 export interface X402WithZKCredentialResponse extends PaymentRequired {
   extensions: {
-    zk_credential: ZKCredentialExtension;
+    'zk-credential': ZKCredentialExtension;
   } & Record<string, unknown>;
 }
 
@@ -115,7 +115,7 @@ export interface X402Response {
   x402: {
     payment_requirements: X402PaymentRequirements;
     extensions: {
-      zk_credential: ZKCredentialExtension;
+      'zk-credential': ZKCredentialExtension;
     };
   };
 }
@@ -135,8 +135,8 @@ export interface X402PaymentRequest {
   x402Version: 2;
   payment: unknown; // x402 payment proof (opaque to zk-credential layer)
   extensions: {
-    zk_credential: {
-      commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
+    'zk-credential': {
+      commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:<base64url>"
     };
   };
 }
@@ -149,8 +149,8 @@ export interface CredentialWireFormat {
   tier: number;
   identity_limit: number;
   expires_at: number;
-  commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
-  signature: string;  // hex-encoded ("0x<R_x><R_y><s>")
+  commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:<base64url>"
+  signature: string;  // base64url-encoded
 }
 
 /** Payment response from facilitator (spec §8.4) */
@@ -158,7 +158,7 @@ export interface X402PaymentResponse {
   x402Version: 2;
   payment_receipt: unknown; // x402 receipt (opaque to zk-credential layer)
   extensions: {
-    zk_credential: {
+    'zk-credential': {
       credential: CredentialWireFormat;
     };
   };
@@ -217,7 +217,7 @@ export const ERROR_CODE_TO_STATUS: Record<ZKCredentialErrorCode, number> = {
 // Utility Functions
 // =============================================================================
 
-/** Parse suite-prefixed string (e.g., "pedersen-schnorr-poseidon-ultrahonk:0x...") */
+/** Parse suite-prefixed string (e.g., "pedersen-schnorr-poseidon-ultrahonk:<base64url>") */
 export function parseSchemePrefix(prefixed: string): { scheme: ZKCredentialSuite; value: string } {
   const colonIdx = prefixed.indexOf(':');
   if (colonIdx === -1) {
@@ -249,8 +249,8 @@ export interface ZKCredentialKey {
   alg: ZKCredentialSuite;
   kty: 'ZK';
   crv: 'BN254';
-  x: string; // hex formatted
-  y: string; // hex formatted
+  x: string; // base64url
+  y: string; // base64url
 }
 
 /** Response from /.well-known/zk-credential-keys */

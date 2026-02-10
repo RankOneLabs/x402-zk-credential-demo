@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CredentialIssuer, type IssuerConfig } from './issuer.js';
 import type { SettlementRequest } from './types.js';
-import { parseSchemePrefix, type ZKCredentialErrorResponse } from '@demo/crypto';
+import { parseSchemePrefix, type ZKCredentialErrorResponse, toBase64Url } from '@demo/crypto';
 
 export interface FacilitatorServerConfig extends IssuerConfig {
   port: number;
@@ -57,8 +57,8 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
   app.get('/.well-known/zk-credential-keys', async (_req, res, next) => {
     try {
       const pubKey = await facilitator.getPublicKey();
-      const xHex = '0x' + pubKey.x.toString(16).padStart(64, '0');
-      const yHex = '0x' + pubKey.y.toString(16).padStart(64, '0');
+      const xB64 = toBase64Url(Buffer.from(pubKey.x.toString(16).padStart(64, '0'), 'hex'));
+      const yB64 = toBase64Url(Buffer.from(pubKey.y.toString(16).padStart(64, '0'), 'hex'));
 
       res.json({
         keys: [
@@ -67,8 +67,8 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
             alg: 'pedersen-schnorr-poseidon-ultrahonk',
             kty: 'ZK',
             crv: 'BN254',
-            x: xHex,
-            y: yHex,
+            x: xB64,
+            y: yB64,
           }
         ]
       });
@@ -84,8 +84,8 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
       const request = req.body as SettlementRequest;
 
       // Validate request structure
-      if (!request.extensions?.zk_credential?.commitment) {
-        const error: ZKCredentialErrorResponse = { error: 'invalid_proof', message: 'Missing extensions.zk_credential.commitment' };
+      if (!request.extensions?.['zk-credential']?.commitment) {
+        const error: ZKCredentialErrorResponse = { error: 'invalid_proof', message: 'Missing extensions.zk-credential.commitment' };
         res.status(400).json(error);
         return;
       }
@@ -104,7 +104,7 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
 
       // Validate scheme prefix
       try {
-        const { scheme } = parseSchemePrefix(request.extensions.zk_credential.commitment);
+        const { scheme } = parseSchemePrefix(request.extensions['zk-credential'].commitment);
         if (scheme !== 'pedersen-schnorr-poseidon-ultrahonk') {
           const error: ZKCredentialErrorResponse = { error: 'unsupported_suite', message: `Unsupported suite: ${scheme}` };
           res.status(400).json(error);

@@ -3,6 +3,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import type { Point } from './types.js';
 
 // BN254 scalar field modulus
 export const FIELD_MODULUS = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
@@ -87,4 +88,43 @@ export function fieldToBytes(field: bigint): Uint8Array {
     value >>= 8n;
   }
   return bytes;
+}
+
+/**
+ * Convert bytes to Base64URL string (no padding)
+ */
+export function toBase64Url(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString('base64url');
+}
+
+/**
+ * Convert Base64URL string to bytes
+ */
+export function fromBase64Url(str: string): Uint8Array {
+  return new Uint8Array(Buffer.from(str, 'base64url'));
+}
+
+/**
+ * Convert Point to bytes (uncompressed: 0x04 || x || y)
+ */
+export function pointToBytes(point: Point): Uint8Array {
+  const xBytes = fieldToBytes(point.x);
+  const yBytes = fieldToBytes(point.y);
+  const result = new Uint8Array(1 + 32 + 32);
+  result[0] = 0x04;
+  result.set(xBytes, 1);
+  result.set(yBytes, 33);
+  return result;
+}
+
+/**
+ * Convert bytes to Point (uncompressed: 0x04 || x || y)
+ */
+export function bytesToPoint(bytes: Uint8Array): Point {
+  if (bytes.length !== 65 || bytes[0] !== 0x04) {
+    throw new Error('Invalid point encoding: expected 65 bytes starting with 0x04');
+  }
+  const x = bytesToField(bytes.slice(1, 33));
+  const y = bytesToField(bytes.slice(33, 65));
+  return { x, y };
 }

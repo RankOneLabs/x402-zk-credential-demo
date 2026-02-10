@@ -22,6 +22,12 @@ import {
   type PaymentRequirements,
   type ZKCredentialKey,
   type ZKCredentialKeysResponse,
+  toBase64Url,
+  fromBase64Url,
+  pointToBytes,
+  bytesToPoint,
+  fieldToBytes,
+  bytesToField,
 } from '@demo/crypto';
 
 /** Settlement request for x402 v2 */
@@ -29,7 +35,7 @@ interface SettlementRequest {
   payment: PaymentPayload;
   paymentRequirements: PaymentRequirements;
   extensions: {
-    zk_credential: {
+    'zk-credential': {
       commitment: string;
     };
   };
@@ -43,7 +49,7 @@ interface SettlementResponse {
     amountUSDC: number;
   };
   extensions: {
-    zk_credential: {
+    'zk-credential': {
       credential: CredentialWireFormat;
     };
   };
@@ -109,12 +115,12 @@ export class ZkCredentialClient {
    * Parses x402 PaymentRequired format with accepts[] array
    */
   parse402Response(body: X402WithZKCredentialResponse): Parsed402Response {
-    // Validate zk_credential extension exists
-    if (!body.extensions?.zk_credential) {
-      throw new Error('Response does not contain zk_credential extension');
+    // Validate zk-credential extension exists
+    if (!body.extensions?.['zk-credential']) {
+      throw new Error('Response does not contain zk-credential extension');
     }
 
-    const zkCredential = body.extensions.zk_credential;
+    const zkCredential = body.extensions['zk-credential'];
 
     // Get first payment option from accepts array
     if (!body.accepts || body.accepts.length === 0) {
@@ -122,20 +128,21 @@ export class ZkCredentialClient {
     }
     const payment = body.accepts[0];
 
-    // Parse scheme-prefixed facilitator pubkey
-    const { scheme, value: pubkeyHex } = parseSchemePrefix(zkCredential.facilitator_pubkey);
+    // Parse scheme-prefixed facilitator pubkey (base64url)
+    const { scheme, value: pubkeyB64 } = parseSchemePrefix(zkCredential.facilitator_pubkey);
     if (scheme !== 'pedersen-schnorr-poseidon-ultrahonk') {
       throw new Error(`Unsupported suite: ${scheme}`);
     }
 
-    // Parse pubkey from uncompressed point format (0x04 + x + y)
-    const pubkeyBytes = pubkeyHex.startsWith('0x') ? pubkeyHex.slice(2) : pubkeyHex;
-    if (!pubkeyBytes.startsWith('04') || pubkeyBytes.length !== 130) {
-      throw new Error('Invalid facilitator pubkey format');
+    // Decode base64url to bytes (0x04 + x + y)
+    const pubkeyBytes = fromBase64Url(pubkeyB64);
+    if (pubkeyBytes[0] !== 0x04 || pubkeyBytes.length !== 65) {
+      throw new Error('Invalid facilitator pubkey format: expected 65 bytes starting with 0x04');
     }
 
-    const pubkeyX = '0x' + pubkeyBytes.slice(2, 66);
-    const pubkeyY = '0x' + pubkeyBytes.slice(66, 130);
+    const pubkeyPoint = bytesToPoint(pubkeyBytes);
+    const pubkeyX = bigIntToHex(pubkeyPoint.x);
+    const pubkeyY = bigIntToHex(pubkeyPoint.y);
 
     // Get facilitator URL from extension (spec §6) or fall back to payTo
     const facilitatorUrl = zkCredential.facilitator_url || payment.payTo;
@@ -213,18 +220,17 @@ export class ZkCredentialClient {
     const commitment = await pedersenCommit(nullifierSeed, blindingFactor);
 
     // Format commitment as suite-prefixed string (spec §8.2)
-    // Format: "pedersen-schnorr-poseidon-ultrahonk:0x04" + x (64 hex) + y (64 hex)
-    const commitmentHex = '0x04' +
-      commitment.point.x.toString(16).padStart(64, '0') +
-      commitment.point.y.toString(16).padStart(64, '0');
-    const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', commitmentHex);
+    // Format: "pedersen-schnorr-poseidon-ultrahonk:<base64url(0x04 + x + y)>"
+    const commitmentBytes = pointToBytes(commitment.point);
+    const commitmentB64 = toBase64Url(commitmentBytes);
+    const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', commitmentB64);
 
     return {
       request: {
         x402Version: 2,
         payment: paymentProof,
         extensions: {
-          zk_credential: {
+          'zk-credential': {
             commitment: commitmentPrefixed,
           },
         },
@@ -244,23 +250,21 @@ export class ZkCredentialClient {
     secrets: { nullifierSeed: bigint; blindingFactor: bigint },
     facilitatorUrl: string
   ): Promise<StoredCredential> {
-    if (!response.extensions?.zk_credential?.credential) {
-      throw new Error('Payment response missing zk_credential credential');
+    if (!response.extensions?.['zk-credential']?.credential) {
+      throw new Error('Payment response missing zk-credential credential');
     }
 
-    const { credential } = response.extensions.zk_credential;
+    const { credential } = response.extensions['zk-credential'];
 
     // Verify the returned commitment matches what we sent
     // Recompute commitment from secrets to verify
     const expectedCommitment = await pedersenCommit(secrets.nullifierSeed, secrets.blindingFactor);
-    const expectedCommitmentHex = '0x04' +
-      expectedCommitment.point.x.toString(16).padStart(64, '0') +
-      expectedCommitment.point.y.toString(16).padStart(64, '0');
+    const expectedCommitmentBytes = pointToBytes(expectedCommitment.point);
+    const expectedCommitmentB64 = toBase64Url(expectedCommitmentBytes);
 
-    const expectedCommitmentNormalized = expectedCommitmentHex.toLowerCase();
-    const { value: returnedCommitmentHex } = parseSchemePrefix(credential.commitment);
-    const returnedCommitment = returnedCommitmentHex.toLowerCase();
-    if (returnedCommitment !== expectedCommitmentNormalized) {
+    const { value: returnedCommitmentB64 } = parseSchemePrefix(credential.commitment);
+
+    if (returnedCommitmentB64 !== expectedCommitmentB64) {
       throw new Error(
         'Commitment mismatch: facilitator returned credential with different commitment. ' +
         'This could indicate a malicious facilitator.'
@@ -290,23 +294,22 @@ export class ZkCredentialClient {
     blindingFactor: bigint,
     facilitatorUrl: string
   ): StoredCredential {
-    // Parse commitment point from suite-prefixed hex (0x04 + 64 hex x + 64 hex y)
-    const { value: commitmentPrefixedHex } = parseSchemePrefix(wire.commitment);
-    const commitmentHex = commitmentPrefixedHex.startsWith('0x') ? commitmentPrefixedHex.slice(2) : commitmentPrefixedHex;
-    if (!commitmentHex.startsWith('04') || commitmentHex.length !== 130) {
-      throw new Error('Invalid commitment format in credential');
-    }
-    const commitmentX = hexToBigInt('0x' + commitmentHex.slice(2, 66));
-    const commitmentY = hexToBigInt('0x' + commitmentHex.slice(66, 130));
+    // Parse commitment point from suite-prefixed base64url
+    const { value: commitmentB64 } = parseSchemePrefix(wire.commitment);
+    const commitmentBytes = fromBase64Url(commitmentB64);
+    const commitmentPoint = bytesToPoint(commitmentBytes);
 
-    // Parse signature (r.x + r.y + s, each 64 hex = 192 total)
-    const sigHex = wire.signature.startsWith('0x') ? wire.signature.slice(2) : wire.signature;
-    if (sigHex.length !== 192) {
-      throw new Error('Invalid signature format in credential');
+    const commitmentX = commitmentPoint.x;
+    const commitmentY = commitmentPoint.y;
+
+    // Parse signature (base64url -> 96 bytes: r.x + r.y + s)
+    const sigBytes = fromBase64Url(wire.signature);
+    if (sigBytes.length !== 96) {
+      throw new Error(`Invalid signature length: expected 96 bytes, got ${sigBytes.length}`);
     }
-    const sigRX = '0x' + sigHex.slice(0, 64);
-    const sigRY = '0x' + sigHex.slice(64, 128);
-    const sigS = '0x' + sigHex.slice(128, 192);
+    const sigRX = bigIntToHex(bytesToField(sigBytes.slice(0, 32)));
+    const sigRY = bigIntToHex(bytesToField(sigBytes.slice(32, 64)));
+    const sigS = bigIntToHex(bytesToField(sigBytes.slice(64, 96)));
 
     return {
       serviceId: wire.service_id,
@@ -357,17 +360,16 @@ export class ZkCredentialClient {
 
     // Compute commitment
     const commitment = await pedersenCommit(nullifierSeed, blindingFactor);
-    const commitmentHex = '0x04' +
-      commitment.point.x.toString(16).padStart(64, '0') +
-      commitment.point.y.toString(16).padStart(64, '0');
-    const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', commitmentHex);
+    const commitmentBytes = pointToBytes(commitment.point);
+    const commitmentB64 = toBase64Url(commitmentBytes);
+    const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', commitmentB64);
 
     // Build x402 v2 settlement request
     const request: SettlementRequest = {
       payment: paymentPayload,
       paymentRequirements,
       extensions: {
-        zk_credential: {
+        'zk-credential': {
           commitment: commitmentPrefixed,
         },
       },
@@ -388,17 +390,17 @@ export class ZkCredentialClient {
     const data = await response.json() as SettlementResponse;
 
     // Extract credential from response
-    const credential = data.extensions?.zk_credential?.credential;
+    const credential = data.extensions?.['zk-credential']?.credential;
     if (!credential) {
-      throw new Error('Settlement response missing extensions.zk_credential.credential');
+      throw new Error('Settlement response missing extensions.zk-credential.credential');
     }
 
     // Verify the returned commitment matches what we sent
     // This prevents a malicious facilitator from issuing credentials with wrong commitments
-    const { value: returnedCommitmentHex } = parseSchemePrefix(credential.commitment);
-    const returnedCommitment = returnedCommitmentHex.toLowerCase();
-    const expectedCommitment = commitmentHex.toLowerCase();
-    if (returnedCommitment !== expectedCommitment) {
+    const { value: returnedCommitmentB64 } = parseSchemePrefix(credential.commitment);
+    const expectedCommitmentB64 = commitmentB64;
+
+    if (returnedCommitmentB64 !== expectedCommitmentB64) {
       throw new Error(
         'Commitment mismatch: facilitator returned credential with different commitment. ' +
         'This could indicate a malicious facilitator.'
@@ -483,7 +485,13 @@ export class ZkCredentialClient {
       if (keys) {
         const key = keys.find((k: ZKCredentialKey) => k.kid === credential.kid);
         if (key) {
-          facilitatorPubkey = { x: key.x, y: key.y };
+          // Convert base64url keys to hex StoredCredential format
+          const xBytes = fromBase64Url(key.x);
+          const yBytes = fromBase64Url(key.y);
+          facilitatorPubkey = {
+            x: bigIntToHex(bytesToField(xBytes)),
+            y: bigIntToHex(bytesToField(yBytes))
+          };
         }
       }
     }
@@ -559,7 +567,7 @@ export class ZkCredentialClient {
 
     const body = JSON.stringify({
       ...baseBody,
-      zk_credential: {
+      'zk-credential': {
         version: '0.1.0',
         suite: 'pedersen-schnorr-poseidon-ultrahonk',
         proof: proof.proof,
@@ -637,7 +645,8 @@ export class ZkCredentialClient {
       const originToken = publicInputs[5];
       const tier = publicInputs[6];
 
-      const proofB64 = Buffer.from(proof).toString('base64');
+      const proofBytes = typeof proof === 'string' ? fromBase64Url(proof) : proof;
+      const proofB64 = toBase64Url(proofBytes);
 
       return {
         proof: proofB64,

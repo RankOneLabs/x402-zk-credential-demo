@@ -10,7 +10,7 @@
  * Run with: npx tsx packages/cli/src/demo.ts
  */
 
-import { parseSchemePrefix, type PaymentRequirements, type PaymentPayload } from '@demo/crypto';
+import { parseSchemePrefix, type PaymentRequirements, type PaymentPayload, fromBase64Url, bytesToPoint, bigIntToHex } from '@demo/crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { x402Client } from '@x402/core/client';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
@@ -48,13 +48,13 @@ async function main() {
 
   const discoveryData = await discoveryResponse.json() as any;
 
-  if (!discoveryData.extensions?.zk_credential) {
-    console.error('✗ Missing zk_credential extension in 402 response');
+  if (!discoveryData.extensions?.['zk-credential']) {
+    console.error('✗ Missing zk-credential extension in 402 response');
     process.exit(1);
   }
 
   const paymentReqs = discoveryData.accepts[0];
-  const zkCredential = discoveryData.extensions.zk_credential;
+  const zkCredential = discoveryData.extensions['zk-credential'];
   const facilitatorUrl = zkCredential.facilitator_url;
   const facilitatorPubkeyString = zkCredential.facilitator_pubkey;
 
@@ -134,11 +134,14 @@ async function main() {
   // === PHASE 3: Anonymous API Access ===
   console.log('━━━ PHASE 3: Anonymous API Access ━━━\n');
 
-  // Parse facilitator pubkey
-  const parsedPubkey = parseSchemePrefix(facilitatorPubkeyString).value;
+  // Parse facilitator pubkey (base64url)
+  const parsedPubkeyB64 = parseSchemePrefix(facilitatorPubkeyString).value;
+  const pubkeyBytes = fromBase64Url(parsedPubkeyB64);
+  const pubkeyPoint = bytesToPoint(pubkeyBytes);
+
   const facilitatorPubkey = {
-    x: '0x' + parsedPubkey.slice(4, 68),
-    y: '0x' + parsedPubkey.slice(68, 132),
+    x: bigIntToHex(pubkeyPoint.x),
+    y: bigIntToHex(pubkeyPoint.y),
   };
 
   console.log('Making authenticated requests with ZK proofs...\n');
