@@ -12,7 +12,7 @@
 
 This extension enables **pay-once, redeem-many** access to x402-protected resources using privacy-preserving credentials proved in zero knowledge.
 
-> **Definition:** A `zk_credential` is a payment-bound access credential issued after successful x402 settlement. Clients present ZK proofs of possession to authorize requests without revealing a linkable identifier.
+> **Definition:** A `zk-credential` is a payment-bound access credential issued after successful x402 settlement. Clients present ZK proofs of possession to authorize requests without revealing a linkable identifier.
 
 **Design intent:** Keep x402 payment semantics intact. Payment uses standard x402 mechanisms. This extension changes only post-payment redemption, allowing clients to make multiple requests without re-paying and without creating linkable per-user identifiers.
 
@@ -80,20 +80,20 @@ PHASE 1: Payment + Credential Issuance (follows x402 v2 canonical flow)
 ─────────────────────────────────────────────────────────────────────
 1. Client → Server:      GET /resource
 2. Server → Client:      402 Payment Required
-                         PAYMENT-REQUIRED: <base64 PaymentRequirements + zk_credential extension>
+                         PAYMENT-REQUIRED: <base64 PaymentRequirements + zk-credential extension>
 3. Client → Server:      POST /resource
                          Content-Type: application/json
-                         Body: { payment, zk_credential: { commitment } }
-4. Server → Facilitator: POST /settle (payload + zk_credential commitment)
-5. Facilitator → Server: SettleResponse + zk_credential credential
+                         Body: { payment, zk-credential: { commitment } }
+4. Server → Facilitator: POST /settle (payload + zk-credential commitment)
+5. Facilitator → Server: SettleResponse + zk-credential credential
 6. Server → Client:      200 OK
-                         Body: { x402: { payment_response }, zk_credential: { credential } }
+                         Body: { x402: { payment_response }, zk-credential: { credential } }
 
 PHASE 2: Private Redemption (separate requests, unlinkable to payment)
 ─────────────────────────────────────────────────────────────────────
 7.  Client → Server:     POST /resource
                          Content-Type: application/json
-                         Body: { zk_credential: { proof, public_outputs } }
+                         Body: { zk-credential: { proof, public_outputs } }
 8.  Server:              Verify proof locally (no facilitator call)
 9.  Server → Client:     200 OK + resource
 
@@ -118,10 +118,11 @@ This is an **intentional deviation** from the "one request after payment" patter
 
 ### 6.1 Normative Requirements
 
-1. **Proofs MUST be carried in the HTTP request body**, not headers.
+1. **Proofs MUST be supported in the HTTP request body.** Body transport is the REQUIRED conformance mode.
 2. **Servers MUST NOT require proofs in headers.**
-3. **Servers MAY accept a header-carried proof as an optimization, but MUST support body transport for conformance.**
-4. **If any header is used, it MUST be metadata-only (e.g., `suite`, `kid`) and MUST NOT be required.**
+3. **Servers MAY accept a header-carried proof as an optimization, but MUST SUPPORT body transport for conformance.** 
+4. **Any header-carried proof is an optional, non-normative optimization.**
+5. **If any header is used, it MUST be metadata-only (e.g., `suite`, `kid`) and MUST NOT be required.**
 5. **Credentials MUST be returned in the response body**, not headers.
 6. **Large artifacts MUST be in the body**; headers are for routing/signaling only.
 
@@ -144,7 +145,7 @@ The client must transmit `current_time` because the proof is bound to the exact 
 
 ```json
 {
-  "zk_credential": {
+  "zk-credential": {
     "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
@@ -185,7 +186,7 @@ The client must transmit `current_time` because the proof is bound to the exact 
       "network": "eip155:8453"
     }
   },
-  "zk_credential": {
+  "zk-credential": {
     "credential": {
       "suite": "pedersen-schnorr-poseidon-ultrahonk",
       "service_id": "0xabc123...",
@@ -218,7 +219,7 @@ POST /api/resource HTTP/1.1
 Content-Type: application/json
 
 {
-  "zk_credential": { ... }
+  "zk-credential": { ... }
 }
 ```
 
@@ -246,7 +247,7 @@ When returning `402 Payment Required`, servers supporting zk-credential include 
     }
   ],
   "extensions": {
-    "zk_credential": {
+    "zk-credential": {
       "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
       "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04abc...",
@@ -263,7 +264,7 @@ When returning `402 Payment Required`, servers supporting zk-credential include 
 | `facilitator_pubkey` | Suite-prefixed issuer public key for credential verification (facilitator acts as issuer) |
 | `max_credential_ttl` | Optional. Maximum credential lifetime in seconds |
 
-Clients that don't support zk-credential ignore `extensions.zk_credential` and use standard x402.
+Clients that don't support zk-credential ignore `extensions.zk-credential` and use standard x402.
 
 ---
 
@@ -294,7 +295,7 @@ Client sends payment with commitment in request body:
     }
   },
   "extensions": {
-    "zk_credential": {
+    "zk-credential": {
       "commitment": "pedersen-schnorr-poseidon-ultrahonk:0x..."
     }
   }
@@ -310,7 +311,7 @@ Server calls facilitator's `/settle` endpoint:
   "paymentPayload": { /* from request */ },
   "paymentRequirements": { /* from server config */ },
   "extensions": {
-    "zk_credential": {
+    "zk-credential": {
       "commitment": "pedersen-schnorr-poseidon-ultrahonk:0x..."
     }
   }
@@ -328,7 +329,7 @@ Facilitator returns credential in settlement response body:
   "network": "eip155:8453",
   "payer": "0x...",
   "extensions": {
-    "zk_credential": {
+    "zk-credential": {
       "credential": {
         "suite": "pedersen-schnorr-poseidon-ultrahonk",
         "service_id": "0xabc123...",
@@ -356,7 +357,7 @@ Server returns credential in response body (not header):
       "network": "eip155:8453"
     }
   },
-  "zk_credential": {
+  "zk-credential": {
     "credential": { ... }
   },
   "data": { /* first response payload (OPTIONAL) */ }
@@ -393,7 +394,7 @@ Host: api.example.com
 Content-Type: application/json
 
 {
-  "zk_credential": {
+  "zk-credential": {
     "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
@@ -416,7 +417,7 @@ The server constructs public inputs from its own configuration and the client-pr
 | Input | Source |
 |-------|--------|
 | `service_id` | Server configuration (see §10.4) |
-| `current_time` | From client's `zk_credential.current_time`; validated within ±60s of server clock (§11.1) |
+| `current_time` | From client's `zk-credential.current_time`; validated within ±60s of server clock (§11.1) |
 | `origin_id` | Computed from request URL per §10 |
 | `facilitator_pubkey` | Looked up by `kid` from request (see §18) |
 
@@ -506,9 +507,9 @@ The ZK proof MUST prove:
 
 ### 11.1 Clock Skew Tolerance
 
-The circuit uses `current_time` as a public input. The client chooses this value at proof generation time and transmits it in `zk_credential.current_time` (§6.3). The server uses the client-provided value to reconstruct public inputs for proof verification, but MUST validate it against the server's own clock:
+The circuit uses `current_time` as a public input. The client chooses this value at proof generation time and transmits it in `zk-credential.current_time` (§6.3). The server uses the client-provided value to reconstruct public inputs for proof verification, but MUST validate it against the server's own clock:
 
-- Servers MUST reject requests where `|zk_credential.current_time - server_clock| > 60 seconds`.
+- Servers MUST reject requests where `|zk-credential.current_time - server_clock| > 60 seconds`.
 - This drift check MUST occur **before** proof verification to avoid wasting computation on stale proofs.
 - Servers MAY include their current time in the 402 response for client synchronization:
   ```json
@@ -707,15 +708,15 @@ The server MAY include `payment_requirements` in the error response to help clie
 
 ## 15. Verification Flow
 
-Server steps for requests with `zk_credential` in body:
+Server steps for requests with `zk-credential` in body:
 
-1. Parse request body for `zk_credential` object
+1. Parse request body for `zk-credential` object
 2. Extract `suite`, `kid`, and `proof`
 3. If unsupported suite → `400 unsupported_suite`
 4. If body too large → `413 payload_too_large` (include `max_body_bytes`)
 5. Look up `facilitator_pubkey` using `kid` (see §18). If unknown → `400 invalid_proof`
 6. Compute `origin_id` from request URL per §10
-7. Extract `current_time` from client's `zk_credential.current_time`
+7. Extract `current_time` from client's `zk-credential.current_time`
 8. If `|current_time - server_clock| > 60s` → `400 invalid_proof` (clock drift exceeded)
 9. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
 10. Verify proof locally (no facilitator call needed)
@@ -727,11 +728,11 @@ Server steps for requests with `zk_credential` in body:
 16. If insufficient → `402 tier_insufficient`
 17. Allow request
 
-Server steps for requests without `zk_credential`:
+Server steps for requests without `zk-credential`:
 
 1. Check for payment in body
 2. If present → process as standard x402 payment (with credential issuance)
-3. If absent → return `402` with payment requirements and `zk_credential` extension
+3. If absent → return `402` with payment requirements and `zk-credential` extension
 
 ---
 
@@ -856,7 +857,7 @@ Response:
 ### 20.1 x402 v2 Compatibility
 
 - Uses x402 v2 conventions for payment flow
-- Extension data in `extensions.zk_credential`
+- Extension data in `extensions.zk-credential`
 - Uses CAIP-2 network identifiers (e.g., `eip155:8453` for Base)
 - Server↔Facilitator communication follows canonical v2 flow
 - Requires facilitator support for zk-credential extension
@@ -864,20 +865,20 @@ Response:
 ### 20.2 Facilitator Requirements
 
 This extension requires a facilitator that:
-- Accepts `extensions.zk_credential.commitment` in settle requests
-- Returns `extensions.zk_credential.credential` in settle responses
+- Accepts `extensions.zk-credential.commitment` in settle requests
+- Returns `extensions.zk-credential.credential` in settle responses
 - Does not log commitment-to-payment mappings
 
 ### 20.3 Backwards Compatibility
 
-- Non-implementing clients ignore `extensions.zk_credential` and use standard x402
+- Non-implementing clients ignore `extensions.zk-credential` and use standard x402
 - Non-implementing servers return standard x402 responses
 - Multiple suites can coexist; client picks from server's list
 
 ### 20.4 Naming Convention
 
 - Extension ID (string identifier): `zk-credential`
-- JSON object key: `zk_credential`
+- JSON object key: `zk-credential`
 
 ---
 
@@ -885,7 +886,7 @@ This extension requires a facilitator that:
 
 An implementation conforms to this specification if it:
 
-1. Advertises support via `extensions.zk_credential` in 402 response body
+1. Advertises support via `extensions.zk-credential` in 402 response body
 2. Accepts proofs in request body (not headers)
 3. Returns credentials in response body (not headers)
 4. Forwards commitment to facilitator during settlement
@@ -941,7 +942,7 @@ Content-Type: application/json
     "payTo": "0x1234..."
   }],
   "extensions": {
-    "zk_credential": {
+    "zk-credential": {
       "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
       "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04..."
@@ -962,7 +963,7 @@ Content-Type: application/json
     "payload": {"signature": "0x...", "authorization": {...}}
   },
   "extensions": {
-    "zk_credential": {
+    "zk-credential": {
       "commitment": "pedersen-schnorr-poseidon-ultrahonk:0x..."
     }
   }
@@ -983,7 +984,7 @@ Content-Type: application/json
       "network": "eip155:8453"
     }
   },
-  "zk_credential": {
+  "zk-credential": {
     "credential": {
       "suite": "pedersen-schnorr-poseidon-ultrahonk",
       "kid": "key-2026-02",
@@ -1008,7 +1009,7 @@ Host: api.example.com
 Content-Type: application/json
 
 {
-  "zk_credential": {
+  "zk-credential": {
     "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
@@ -1049,7 +1050,7 @@ If credential redemption occurred in the same request as payment, the server wou
 - Credential issuance piggybacks on existing settlement response
 
 **`expires_at` checked inside circuit:**
-The circuit checks `expires_at >= current_time` internally. This keeps `expires_at` private (not leaked as a public output) while still enforcing freshness: the client-provided `zk_credential.current_time` is a public input to the circuit, while `expires_at` remains private, and the server validates that this client-supplied time is within an acceptable drift of its own clock.
+The circuit checks `expires_at >= current_time` internally. This keeps `expires_at` private (not leaked as a public output) while still enforcing freshness: the client-provided `zk-credential.current_time` is a public input to the circuit, while `expires_at` remains private, and the server validates that this client-supplied time is within an acceptable drift of its own clock.
 
 **`identity_limit` naming:**
 Clarifies semantic: maximum distinct identities derivable, not "uses". Circuit enforces `identity_index < identity_limit`.
