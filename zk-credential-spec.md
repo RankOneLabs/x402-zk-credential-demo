@@ -189,7 +189,7 @@ The client must transmit `current_time` because the proof is bound to the exact 
   "zk-credential": {
     "credential": {
       "suite": "pedersen-schnorr-poseidon-ultrahonk",
-      "service_id": "0xabc123...",
+      "service_id": "<base64url-service-id>",
       "tier": 1,
       "identity_limit": 1000,
       "expires_at": 1707004800,
