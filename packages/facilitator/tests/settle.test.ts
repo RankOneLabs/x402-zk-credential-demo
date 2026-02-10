@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CredentialIssuer, type IssuerConfig, type TierConfig } from '../src/issuer.js';
 import type { SettlementRequest } from '../src/types.js';
 import type { PaymentPayload, PaymentRequirements, Point } from '@demo/crypto';
+import { toBase64Url, fromBase64Url, fieldToBytes } from '@demo/crypto';
 
 // Mock the crypto module for consistent test results
 vi.mock('@demo/crypto', async (importOriginal) => {
@@ -13,6 +14,9 @@ vi.mock('@demo/crypto', async (importOriginal) => {
     addSchemePrefix: actual.addSchemePrefix,
     hexToBigInt: actual.hexToBigInt,
     bigIntToHex: actual.bigIntToHex,
+    toBase64Url: actual.toBase64Url,
+    fromBase64Url: actual.fromBase64Url,
+    fieldToBytes: actual.fieldToBytes,
     // Mock crypto operations for deterministic tests
     derivePublicKey: vi.fn().mockResolvedValue({
       x: 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdefn,
@@ -38,12 +42,21 @@ const TEST_TIERS: TierConfig[] = [
 ];
 
 const TEST_COMMITMENT_X = '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-const TEST_COMMITMENT_Y = 'fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321';
-const TEST_COMMITMENT = `pedersen-schnorr-poseidon-ultrahonk:0x04${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`;
+const TEST_COMMITMENT_Y = '0edcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321';
+const TEST_COMMITMENT_BYTES = new Uint8Array([
+  0x04,
+  ...Buffer.from(TEST_COMMITMENT_X, 'hex'),
+  ...Buffer.from(TEST_COMMITMENT_Y, 'hex')
+]);
+const TEST_COMMITMENT = `pedersen-schnorr-poseidon-ultrahonk:${toBase64Url(TEST_COMMITMENT_BYTES)}`;
 
 const TEST_PAYMENT_PAYLOAD: PaymentPayload = {
   x402Version: 2,
-  resource: { url: 'https://example.com/api' },
+  resource: {
+    url: 'https://example.com/api',
+    description: 'Test Resource',
+    mimeType: 'application/json'
+  },
   accepted: {
     scheme: 'exact',
     network: 'eip155:31337',
@@ -126,7 +139,7 @@ describe('CredentialIssuer.settle()', () => {
       payment: TEST_PAYMENT_PAYLOAD,
       paymentRequirements: TEST_PAYMENT_REQUIREMENTS,
       extensions: {
-        zk_credential: {
+        'zk-credential': {
           commitment: TEST_COMMITMENT,
         },
       },
@@ -157,14 +170,16 @@ describe('CredentialIssuer.settle()', () => {
       expect(response.payment_receipt.amountUSDC).toBe(0.1); // 100000 / 10^6
 
       // Verify credential structure
-      const cred = response.extensions.zk_credential.credential;
+      const cred = response.extensions['zk-credential'].credential;
       expect(cred.suite).toBe('pedersen-schnorr-poseidon-ultrahonk');
-      expect(cred.service_id).toBe('0x00000000000000000000000000000000000000000000000000000000000003e9'); // 1001n
+      expect(cred.service_id).toBe(toBase64Url(fieldToBytes(1001n))); // 1001n
       expect(cred.tier).toBe(1); // $0.10 qualifies for tier 1
       expect(cred.identity_limit).toBe(10);
       expect(cred.expires_at).toBe(Math.floor(new Date('2026-01-15T12:00:00Z').getTime() / 1000) + 3600); // tier 1 duration
-      expect(cred.commitment).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:0x04[a-f0-9]{128}$/);
-      expect(cred.signature).toMatch(/^0x[a-f0-9]{192}$/); // r.x + r.y + s
+      expect(cred.commitment).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:[A-Za-z0-9_-]+$/);
+      // Signature is 96 bytes (64+64+64 ?? no, point is 64 bytes (32+32) + scalar 32 bytes = 96 bytes)
+      // 96 * 4 / 3 = 128 chars
+      expect(cred.signature).toMatch(/^[A-Za-z0-9_-]{128}$/);
     });
 
     it('should assign higher tier for larger payment', async () => {
@@ -178,9 +193,9 @@ describe('CredentialIssuer.settle()', () => {
 
       const response = await issuer.settle(request);
 
-      expect(response.extensions.zk_credential.credential.tier).toBe(2); // $1.00 qualifies for tier 2
-      expect(response.extensions.zk_credential.credential.identity_limit).toBe(50);
-      expect(response.extensions.zk_credential.credential.expires_at).toBe(
+      expect(response.extensions['zk-credential'].credential.tier).toBe(2); // $1.00 qualifies for tier 2
+      expect(response.extensions['zk-credential'].credential.identity_limit).toBe(50);
+      expect(response.extensions['zk-credential'].credential.expires_at).toBe(
         Math.floor(new Date('2026-01-15T12:00:00Z').getTime() / 1000) + 86400 // tier 2 duration
       );
     });
@@ -206,7 +221,7 @@ describe('CredentialIssuer.settle()', () => {
       const response = await issuer.settle(request);
 
       expect(response.payment_receipt.amountUSDC).toBe(1.0);
-      expect(response.extensions.zk_credential.credential.tier).toBe(2);
+      expect(response.extensions['zk-credential'].credential.tier).toBe(2);
     });
   });
 
@@ -215,7 +230,7 @@ describe('CredentialIssuer.settle()', () => {
       const issuer = createIssuer();
       const request = createSettlementRequest({
         extensions: {
-          zk_credential: {
+          'zk-credential': {
             commitment: `unsupported-scheme:0x04${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`,
           },
         },
@@ -228,7 +243,7 @@ describe('CredentialIssuer.settle()', () => {
       const issuer = createIssuer();
       const request = createSettlementRequest({
         extensions: {
-          zk_credential: {
+          'zk-credential': {
             // Missing 04 prefix for uncompressed point
             commitment: `pedersen-schnorr-poseidon-ultrahonk:0x${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`,
           },
@@ -242,7 +257,7 @@ describe('CredentialIssuer.settle()', () => {
       const issuer = createIssuer();
       const request = createSettlementRequest({
         extensions: {
-          zk_credential: {
+          'zk-credential': {
             commitment: `pedersen-schnorr-poseidon-ultrahonk:0x04${TEST_COMMITMENT_X}`, // Missing Y coordinate
           },
         },
@@ -255,7 +270,7 @@ describe('CredentialIssuer.settle()', () => {
       const issuer = createIssuer();
       const request = createSettlementRequest({
         extensions: {
-          zk_credential: {
+          'zk-credential': {
             commitment: `pedersen-schnorr-poseidon-ultrahonk:0x04${'z'.repeat(64)}${'x'.repeat(64)}`,
           },
         },
@@ -336,7 +351,7 @@ describe('CredentialIssuer.settle()', () => {
       });
 
       const response = await issuer.settle(request);
-      expect(response.extensions.zk_credential.credential.tier).toBe(1);
+      expect(response.extensions['zk-credential'].credential.tier).toBe(1);
     });
 
     it('should assign highest qualifying tier', async () => {
@@ -357,8 +372,8 @@ describe('CredentialIssuer.settle()', () => {
       });
 
       const response = await issuer.settle(request);
-      expect(response.extensions.zk_credential.credential.tier).toBe(2);
-      expect(response.extensions.zk_credential.credential.identity_limit).toBe(50);
+      expect(response.extensions['zk-credential'].credential.tier).toBe(2);
+      expect(response.extensions['zk-credential'].credential.identity_limit).toBe(50);
     });
   });
 
@@ -369,9 +384,9 @@ describe('CredentialIssuer.settle()', () => {
 
       const response = await issuer.settle(request);
 
-      // 42n should be padded to 32 bytes hex
-      expect(response.extensions.zk_credential.credential.service_id).toBe(
-        '0x000000000000000000000000000000000000000000000000000000000000002a'
+      // 42n service ID
+      expect(response.extensions['zk-credential'].credential.service_id).toBe(
+        toBase64Url(fieldToBytes(42n))
       );
     });
 
@@ -381,8 +396,8 @@ describe('CredentialIssuer.settle()', () => {
 
       const response = await issuer.settle(request);
 
-      expect(response.extensions.zk_credential.credential.commitment).toBe(
-        `pedersen-schnorr-poseidon-ultrahonk:0x04${TEST_COMMITMENT_X}${TEST_COMMITMENT_Y}`
+      expect(response.extensions['zk-credential'].credential.commitment).toBe(
+        TEST_COMMITMENT
       );
     });
 
@@ -392,10 +407,10 @@ describe('CredentialIssuer.settle()', () => {
 
       const response = await issuer.settle(request);
 
-      // Signature should be r.x (64 hex) + r.y (64 hex) + s (64 hex) = 192 hex chars
-      const sig = response.extensions.zk_credential.credential.signature;
-      expect(sig).toMatch(/^0x[a-f0-9]{192}$/);
-      expect(sig.length).toBe(2 + 192); // 0x prefix + 192 hex chars
+      // Signature should be 96 bytes encoded as Base64URL
+      const sig = response.extensions['zk-credential'].credential.signature;
+      expect(sig).toMatch(/^[A-Za-z0-9_-]{128}$/);
+      expect(sig.length).toBe(128);
     });
   });
 });

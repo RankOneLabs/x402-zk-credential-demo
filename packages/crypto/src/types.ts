@@ -55,8 +55,8 @@ export type ZKCredentialSuite =
 /** Credential as signed by facilitator (spec §7.3) */
 export interface SignedCredential {
   suite: ZKCredentialSuite;
-  serviceId: bigint;
-  tier: number;
+  service_id: string; // base64url-encoded
+  kid?: string;
   identityLimit: number;
   expiresAt: number;
   userCommitment: Point;

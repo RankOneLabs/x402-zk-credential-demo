@@ -283,7 +283,7 @@ export class CredentialIssuer {
         'zk-credential': {
           credential: {
             suite: 'pedersen-schnorr-poseidon-ultrahonk',
-            service_id: bigIntToHex(this.config.serviceId),
+            service_id: toBase64Url(fieldToBytes(this.config.serviceId)),
             tier: tierConfig.tier,
             identity_limit: tierConfig.identityLimit,
             kid: this.config.kid ?? '1',

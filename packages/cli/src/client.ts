@@ -604,14 +604,15 @@ export class ZkCredentialClient {
     const input = {
       // Public inputs
       // Note: Noir expects these to be part of the witness generation
-      service_id: fmt(credential.serviceId),
+      // Convert service_id from base64url to BigInt
+      service_id: fmt(bytesToField(fromBase64Url(credential.serviceId))),
       current_time: fmt(currentTime),
       origin_id: fmt(originId),
       facilitator_pubkey_x: fmt(credential.facilitatorPubkey.x),
       facilitator_pubkey_y: fmt(credential.facilitatorPubkey.y),
 
       // Private inputs
-      cred_service_id: fmt(credential.serviceId),
+      cred_service_id: fmt(bytesToField(fromBase64Url(credential.serviceId))),
       cred_tier: fmt(credential.tier),
       cred_identity_limit: fmt(credential.identityLimit),
       cred_expires_at: fmt(credential.expiresAt),
@@ -707,7 +708,7 @@ export class ZkCredentialClient {
         // Use hash(timeBucket, serviceId, obtainedAt) for deterministic but unpredictable index
         const hash = poseidonHash3(
           BigInt(timeBucket),
-          BigInt(credential.serviceId),
+          bytesToField(fromBase64Url(credential.serviceId)),
           BigInt(credential.obtainedAt)
         );
 

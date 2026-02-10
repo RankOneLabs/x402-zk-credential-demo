@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CredentialIssuer, type IssuerConfig } from './issuer.js';
 import type { SettlementRequest } from './types.js';
-import { parseSchemePrefix, type ZKCredentialErrorResponse, toBase64Url } from '@demo/crypto';
+import { parseSchemePrefix, type ZKCredentialErrorResponse, toBase64Url, fieldToBytes } from '@demo/crypto';
 
 export interface FacilitatorServerConfig extends IssuerConfig {
   port: number;
@@ -38,7 +38,7 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
     try {
       const pubkeyPrefixed = await facilitator.getPublicKeyPrefixed();
       res.json({
-        service_id: config.serviceId.toString(),
+        service_id: toBase64Url(fieldToBytes(config.serviceId)),
         facilitator_pubkey: pubkeyPrefixed,
         credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
         tiers: config.tiers.map(t => ({
