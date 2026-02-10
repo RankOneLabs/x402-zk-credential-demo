@@ -133,7 +133,7 @@ describe('End-to-End Flow', () => {
         console.log(`MockUSDC deployed at: ${usdcAddress}`);
         expect(usdcAddress).toBeDefined();
         expect(usdcAddress).toMatch(/^0x[a-fA-F0-9]{40}$/);
-    }, 30000); // extensive timeout for compilation
+    }, 120000); // 2 min timeout for forge compilation on CI cold cache
 
     it('should start Facilitator and API servers', async () => {
         // 1. Start Facilitator
