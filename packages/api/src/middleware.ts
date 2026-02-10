@@ -27,6 +27,9 @@ import {
   type ZKCredentialErrorResponse,
   type ZKCredentialErrorCode,
   ERROR_CODE_TO_STATUS,
+  toBase64Url,
+  fromBase64Url,
+  pointToBytes,
 } from '@demo/crypto';
 import { RateLimiter, type RateLimitConfig } from './ratelimit.js';
 import { ZkVerifier } from './verifier.js';
@@ -112,9 +115,9 @@ export class ZkCredentialMiddleware {
    * Get suite-prefixed public key for 402 response
    */
   private getFacilitatorPubkeyPrefixed(): string {
-    const xHex = this.config.facilitatorPubkey.x.toString(16).padStart(64, '0');
-    const yHex = this.config.facilitatorPubkey.y.toString(16).padStart(64, '0');
-    return addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', `0x04${xHex}${yHex}`);
+    const pubKeyBytes = pointToBytes(this.config.facilitatorPubkey);
+    const pubKeyB64 = toBase64Url(pubKeyBytes);
+    return addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', pubKeyB64);
   }
 
   /**
@@ -159,7 +162,7 @@ export class ZkCredentialMiddleware {
         },
       ],
       extensions: {
-        zk_credential: {
+        'zk-credential': {
           version: '0.1.0',
           credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
           facilitator_pubkey: this.getFacilitatorPubkeyPrefixed(),
@@ -195,8 +198,8 @@ export class ZkCredentialMiddleware {
       // 0. Handle Payment Settlement (Mediated Flow)
       const paymentBody = req.body as Record<string, unknown> | undefined;
       const payment = (paymentBody as { payment?: unknown } | undefined)?.payment;
-      const zkCredential = (paymentBody as { extensions?: { zk_credential?: { commitment?: string } } } | undefined)
-        ?.extensions?.zk_credential;
+      const zkCredential = (paymentBody as { extensions?: { 'zk-credential'?: { commitment?: string } } } | undefined)
+        ?.extensions?.['zk-credential'];
       if (payment) {
         try {
           console.log('[ZkCredential] Processing payment body...');
@@ -208,7 +211,7 @@ export class ZkCredentialMiddleware {
           if (!zkCredential?.commitment) {
             throw new PaymentError(
               'invalid_proof',
-              'Missing extensions.zk_credential.commitment per spec §8.2'
+              'Missing extensions.zk-credential.commitment per spec §8.2'
             );
           }
 
@@ -218,7 +221,7 @@ export class ZkCredentialMiddleware {
             payment,
             paymentRequirements: this.buildPaymentRequirements(),
             extensions: {
-              zk_credential: {
+              'zk-credential': {
                 commitment: zkCredential.commitment,
               },
             },
@@ -280,7 +283,7 @@ export class ZkCredentialMiddleware {
             );
           }
 
-          // Validate extensions.zk_credential.credential
+          // Validate extensions.zk-credential.credential
           if (!response.extensions || typeof response.extensions !== 'object') {
             throw new PaymentError(
               'server_error',
@@ -288,17 +291,17 @@ export class ZkCredentialMiddleware {
             );
           }
           const extensions = response.extensions as Record<string, unknown>;
-          if (!extensions.zk_credential || typeof extensions.zk_credential !== 'object') {
+          if (!extensions['zk-credential'] || typeof extensions['zk-credential'] !== 'object') {
             throw new PaymentError(
               'server_error',
-              'Settlement response missing extensions.zk_credential'
+              'Settlement response missing extensions.zk-credential'
             );
           }
-          const zkCredExt = extensions.zk_credential as Record<string, unknown>;
+          const zkCredExt = extensions['zk-credential'] as Record<string, unknown>;
           if (!zkCredExt.credential || typeof zkCredExt.credential !== 'object') {
             throw new PaymentError(
               'server_error',
-              'Settlement response missing extensions.zk_credential.credential'
+              'Settlement response missing extensions.zk-credential.credential'
             );
           }
           const cred = zkCredExt.credential as Record<string, unknown>;
@@ -316,7 +319,7 @@ export class ZkCredentialMiddleware {
             x402: {
               payment_response: response.payment_receipt,
             },
-            zk_credential: {
+            'zk-credential': {
               credential: cred,
             },
           };
@@ -350,7 +353,7 @@ export class ZkCredentialMiddleware {
       if (!result.valid) {
         // 402: Payment Required when no credentials provided (spec §6)
         // Prompts client to discover payment requirements and obtain credentials
-        const hasPresentation = !!(paymentBody && typeof paymentBody === 'object' && 'zk_credential' in paymentBody);
+        const hasPresentation = !!(paymentBody && typeof paymentBody === 'object' && 'zk-credential' in paymentBody);
         if (!hasPresentation) {
           const resourceUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
           res.status(402).json(this.build402Response(resourceUrl));
@@ -387,7 +390,7 @@ export class ZkCredentialMiddleware {
   }
 
   /**
-   * Parse zk_credential envelope from request body (spec §6.3)
+   * Parse zk-credential envelope from request body (spec §6.3)
    */
   private parseProofEnvelope(req: Request): {
     suite: string;
@@ -397,7 +400,7 @@ export class ZkCredentialMiddleware {
     publicOutputs: { originToken: string; tier: number };
   } | null {
     const body = req.body as Record<string, unknown> | undefined;
-    const zkCredential = (body as { zk_credential?: Record<string, unknown> } | undefined)?.zk_credential;
+    const zkCredential = (body as { 'zk-credential'?: Record<string, unknown> } | undefined)?.['zk-credential'];
     if (!zkCredential || typeof zkCredential !== 'object') {
       return null;
     }
@@ -446,38 +449,30 @@ export class ZkCredentialMiddleware {
   }
 
   /**
-   * Strictly validate a base64 string
-   * Node's Buffer.from() is lenient and may ignore invalid characters.
-   * This performs strict validation using regex and round-trip check.
+   * Strictly validate a base64url string
+   * Valid base64url: A-Z, a-z, 0-9, -, _
+   * No padding allowed per spec.
    */
-  private isValidBase64(str: string): boolean {
-    // Empty string is not valid base64
+  private isValidBase64Url(str: string): boolean {
+    // Empty string is not valid
     if (str.length === 0) {
       return false;
     }
 
-    // Check if string contains only valid base64 characters
-    // Valid base64: A-Z, a-z, 0-9, +, /, and optional padding with =
-    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-    if (!base64Regex.test(str)) {
+    // Check if string contains only valid base64url characters
+    const base64UrlRegex = /^[A-Za-z0-9\-_]+$/;
+    if (!base64UrlRegex.test(str)) {
       return false;
     }
 
-    // Perform round-trip check: decode then encode should match original
-    try {
-      const decoded = Buffer.from(str, 'base64');
-      const reencoded = decoded.toString('base64');
-      return str === reencoded;
-    } catch {
-      return false;
-    }
+    return true;
   }
 
   /**
    * Verify a request's ZK credential (spec §15)
    * 
    * Verification flow:
-   * 1. Parse request body for zk_credential
+   * 1. Parse request body for zk-credential
    * 2. If missing → credential_missing
    * 3. Check suite support
    * 4. Construct public inputs: (service_id, current_time, origin_id, facilitator_pubkey)
@@ -490,7 +485,7 @@ export class ZkCredentialMiddleware {
     // Step 1-2: Parse request body
     const presentation = this.parseProofEnvelope(req);
     if (!presentation) {
-      return { valid: false, errorCode: 'credential_missing', message: 'Missing zk_credential presentation' };
+      return { valid: false, errorCode: 'credential_missing', message: 'Missing zk-credential presentation' };
     }
 
     // Step 3: Check suite
@@ -498,12 +493,12 @@ export class ZkCredentialMiddleware {
       return { valid: false, errorCode: 'unsupported_suite', message: `Unsupported suite: ${presentation.suite}` };
     }
 
-    // Step 3.5: Strictly validate base64 proof encoding
-    if (!this.isValidBase64(presentation.proofB64)) {
+    // Step 3.5: Strictly validate base64url proof encoding
+    if (!this.isValidBase64Url(presentation.proofB64)) {
       return { valid: false, errorCode: 'invalid_proof', message: 'Invalid proof encoding' };
     }
 
-    const proofBytes = Buffer.from(presentation.proofB64, 'base64');
+    const proofBytes = fromBase64Url(presentation.proofB64);
 
     const originId = this.computeOriginId(req);
     const serverTime = BigInt(Math.floor(Date.now() / 1000));

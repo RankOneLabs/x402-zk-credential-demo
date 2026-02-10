@@ -120,6 +120,17 @@ export class CredentialStorage {
   }
 
   /**
+   * Update facilitator pubkey for a credential
+   */
+  updateFacilitatorPubkey(serviceId: string, pubkey: { x: string; y: string }): void {
+    const cred = this.data.credentials[serviceId];
+    if (cred) {
+      cred.facilitatorPubkey = pubkey;
+      this.save();
+    }
+  }
+
+  /**
    * Clear all credentials
    */
   clear(): void {

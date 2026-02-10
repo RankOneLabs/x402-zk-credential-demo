@@ -16,6 +16,11 @@ import {
   type Point,
   type PaymentPayload,
   type PaymentRequirements,
+  toBase64Url,
+  fromBase64Url,
+  pointToBytes,
+  bytesToPoint,
+  fieldToBytes,
 } from '@demo/crypto';
 import type { SettlementRequest, SettlementResponse } from './types.js';
 // Import from exact/facilitator for server-side verify/settle
@@ -191,9 +196,9 @@ export class CredentialIssuer {
    */
   async getPublicKeyPrefixed(): Promise<string> {
     const pubKey = await this.getPublicKey();
-    const xHex = pubKey.x.toString(16).padStart(64, '0');
-    const yHex = pubKey.y.toString(16).padStart(64, '0');
-    return addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', `0x04${xHex}${yHex}`);
+    const pubKeyBytes = pointToBytes(pubKey);
+    const pubKeyB64 = toBase64Url(pubKeyBytes);
+    return addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', pubKeyB64);
   }
 
   /**
@@ -202,19 +207,19 @@ export class CredentialIssuer {
   async settle(request: SettlementRequest): Promise<SettlementResponse> {
     await this.initialize();
 
-    const { scheme, value: commitmentHex } = parseSchemePrefix(request.extensions.zk_credential.commitment);
+    const { scheme, value: commitmentB64 } = parseSchemePrefix(request.extensions['zk-credential'].commitment);
     if (scheme !== 'pedersen-schnorr-poseidon-ultrahonk') {
       throw new Error(`Unsupported suite: ${scheme}`);
     }
 
-    const commitmentBytes = commitmentHex.startsWith('0x') ? commitmentHex.slice(2) : commitmentHex;
-    if (!commitmentBytes.startsWith('04') || commitmentBytes.length !== 130) {
-      throw new Error('Invalid commitment format: expected uncompressed point (04 + 64 hex x + 64 hex y)');
+    const commitmentBytes = fromBase64Url(commitmentB64);
+
+    let userCommitment: Point;
+    try {
+      userCommitment = bytesToPoint(commitmentBytes);
+    } catch {
+      throw new Error('Invalid commitment format: expected 65 bytes starting with 0x04');
     }
-    const userCommitment: Point = {
-      x: hexToBigInt('0x' + commitmentBytes.slice(2, 66)),
-      y: hexToBigInt('0x' + commitmentBytes.slice(66, 130)),
-    };
 
     if (!this.evmScheme) {
       throw new Error('EVM payment scheme not configured');
@@ -254,16 +259,18 @@ export class CredentialIssuer {
 
     const signature = await schnorrSign(this.config.secretKey, message);
 
-    const sigHex = '0x' +
-      signature.r.x.toString(16).padStart(64, '0') +
-      signature.r.y.toString(16).padStart(64, '0') +
-      signature.s.toString(16).padStart(64, '0');
+    // Signature (r.x + r.y + s) -> 96 bytes -> base64url
+    const sigBytes = new Uint8Array(96);
+    sigBytes.set(fieldToBytes(signature.r.x), 0);
+    sigBytes.set(fieldToBytes(signature.r.y), 32);
+    sigBytes.set(fieldToBytes(signature.s), 64);
+    const sigB64 = toBase64Url(sigBytes);
 
-    const commitmentOutHex = addSchemePrefix(
+    const commitmentOutBytes = pointToBytes(userCommitment);
+    const commitmentOutB64 = toBase64Url(commitmentOutBytes);
+    const commitmentOutPrefixed = addSchemePrefix(
       'pedersen-schnorr-poseidon-ultrahonk',
-      '0x04' +
-      userCommitment.x.toString(16).padStart(64, '0') +
-      userCommitment.y.toString(16).padStart(64, '0')
+      commitmentOutB64
     );
 
     const response: SettlementResponse = {
@@ -273,16 +280,16 @@ export class CredentialIssuer {
         amountUSDC,
       },
       extensions: {
-        zk_credential: {
+        'zk-credential': {
           credential: {
             suite: 'pedersen-schnorr-poseidon-ultrahonk',
-            service_id: bigIntToHex(this.config.serviceId),
+            service_id: toBase64Url(fieldToBytes(this.config.serviceId)),
             tier: tierConfig.tier,
             identity_limit: tierConfig.identityLimit,
             kid: this.config.kid ?? '1',
             expires_at: expiresAt,
-            commitment: commitmentOutHex,
-            signature: sigHex,
+            commitment: commitmentOutPrefixed,
+            signature: sigB64,
           },
         },
       },

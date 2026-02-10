@@ -17,7 +17,7 @@ The credential is short-lived and bounded, and includes:
 - `service_id` binding (prevents cross-service replay)
 - `tier` (access level derived from payment amount)
 - `expires_at` (credential expiry)
-- `identity_budget` (maximum distinct identities)
+- `identity_limit` (maximum distinct identities)
 - facilitator signature over the credential fields
 
 ### Phase 2: ZK authorization for subsequent requests
@@ -35,8 +35,9 @@ To support replay prevention and usage constraints, the proof derives an `origin
 The server tracks `origin_token` values to enforce constraints (e.g., prevent reuse, rate limit per origin). The client can control linkability behavior by how it uses `identity_index` and `origin_id` across requests/endpoints.
 
 ## Transport considerations
-Proof and credential artifacts can exceed common HTTP header limits (proof sizes around the ~10–20KB range have already caused integration failures). The extension therefore defines body-based transport and requires proofs in the request body. In the body-based option, proofs are carried as a JSON object with a dedicated `zk_credential` envelope, while headers remain small and conventional. Public inputs are server-derived; clients send only `public_outputs` alongside the proof. The exact wire format is defined in the x402 ZK Credential spec and MUST be followed for interoperability.
+Proof and credential artifacts can exceed common HTTP header limits (proof sizes around the ~10–20KB range have already caused integration failures). Redemption proofs are carried in the request body (JSON/CBOR) rather than headers, because proof artifacts often exceed deployed header limits. In the body-based option, proofs are carried as a JSON object with a dedicated `zk-credential` envelope, while headers remain small and conventional. Public inputs are server-derived; clients send only `public_outputs` alongside the proof. The exact wire format is defined in the x402 ZK Credential spec and MUST be followed for interoperability.
 
 ## Status
 - A working demo exercises the flow (x402 payment → credential issuance → proof-based access).
-- The spec defines `zk_credential` (v0.2.0), body transport, public outputs, key rotation via `kid`, and wire encoding for commitments and signatures.
+- The spec defines `zk-credential` (v0.2.0), body transport, public outputs, key rotation via `kid`, and wire encoding for commitments and signatures. Servers can expose issuer keys at `/.well-known/zk-credential-keys` (HTTP GET) to support rotation; deployments may also provision keys out-of-band.
+- Suites can be SNARK or STARK based.

@@ -25,7 +25,7 @@ export interface SettlementRequest {
   paymentRequirements: PaymentRequirements;
   /** ZK credential extension with suite-prefixed commitment */
   extensions: {
-    zk_credential: {
+    'zk-credential': {
       /** Suite-prefixed commitment: "pedersen-schnorr-poseidon-ultrahonk:0x..." */
       commitment: string;
     };
@@ -45,7 +45,7 @@ export interface SettlementResponse {
   };
   /** ZK credential */
   extensions: {
-    zk_credential: {
+    'zk-credential': {
       credential: CredentialWireFormat;
     };
   };

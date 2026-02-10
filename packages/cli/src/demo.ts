@@ -2,7 +2,7 @@
  * Demo: Make a real USDC payment and obtain credential
  * 
  * This script demonstrates the full x402 zk-credential payment flow:
- * 1. Discovery: Fetch 402 response with zk_credential extension
+ * 1. Discovery: Fetch 402 response with zk-credential extension
  * 2. Payment: Create EIP-3009 signed authorization via x402Client
  * 3. Settlement: Submit payment to facilitator and obtain credential
  * 4. Access: Make authenticated requests with ZK proofs
@@ -10,7 +10,7 @@
  * Run with: npx tsx packages/cli/src/demo.ts
  */
 
-import { parseSchemePrefix, type PaymentRequirements, type PaymentPayload } from '@demo/crypto';
+import { parseSchemePrefix, type PaymentRequirements, type PaymentPayload, fromBase64Url, bytesToPoint, bigIntToHex } from '@demo/crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { x402Client } from '@x402/core/client';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
@@ -30,7 +30,7 @@ async function main() {
   console.log('━━━ PHASE 1: Discovery (402 Response) ━━━\n');
 
   console.log(`Requesting protected resource: ${API_URL}/api/whoami`);
-  console.log('Expected: 402 Payment Required with zk_credential extension\n');
+  console.log('Expected: 402 Payment Required with zk-credential extension\n');
 
   const discoveryResponse = await fetch(`${API_URL}/api/whoami`);
 
@@ -48,13 +48,13 @@ async function main() {
 
   const discoveryData = await discoveryResponse.json() as any;
 
-  if (!discoveryData.extensions?.zk_credential) {
-    console.error('✗ Missing zk_credential extension in 402 response');
+  if (!discoveryData.extensions?.['zk-credential']) {
+    console.error('✗ Missing zk-credential extension in 402 response');
     process.exit(1);
   }
 
   const paymentReqs = discoveryData.accepts[0];
-  const zkCredential = discoveryData.extensions.zk_credential;
+  const zkCredential = discoveryData.extensions['zk-credential'];
   const facilitatorUrl = zkCredential.facilitator_url;
   const facilitatorPubkeyString = zkCredential.facilitator_pubkey;
 
@@ -134,11 +134,14 @@ async function main() {
   // === PHASE 3: Anonymous API Access ===
   console.log('━━━ PHASE 3: Anonymous API Access ━━━\n');
 
-  // Parse facilitator pubkey
-  const parsedPubkey = parseSchemePrefix(facilitatorPubkeyString).value;
+  // Parse facilitator pubkey (base64url)
+  const parsedPubkeyB64 = parseSchemePrefix(facilitatorPubkeyString).value;
+  const pubkeyBytes = fromBase64Url(parsedPubkeyB64);
+  const pubkeyPoint = bytesToPoint(pubkeyBytes);
+
   const facilitatorPubkey = {
-    x: '0x' + parsedPubkey.slice(4, 68),
-    y: '0x' + parsedPubkey.slice(68, 132),
+    x: bigIntToHex(pubkeyPoint.x),
+    y: bigIntToHex(pubkeyPoint.y),
   };
 
   console.log('Making authenticated requests with ZK proofs...\n');

@@ -38,8 +38,9 @@ describe('Facilitator Server', () => {
         expect(key.kty).toBe('ZK');
         expect(key.crv).toBe('BN254');
         expect(key.alg).toBe('pedersen-schnorr-poseidon-ultrahonk');
-        expect(key.x).toMatch(/^0x[0-9a-f]{64}$/);
-        expect(key.y).toMatch(/^0x[0-9a-f]{64}$/);
+        // Base64URL encoded 32-byte values => ~43 chars
+        expect(key.x).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(key.y).toMatch(/^[A-Za-z0-9_-]{43}$/);
     });
 
     it('should return 404 with structured error for unknown endpoints', async () => {
@@ -59,6 +60,6 @@ describe('Facilitator Server', () => {
         expect(response.status).toBe(400);
         const error = await response.json() as ZKCredentialErrorResponse;
         expect(error.error).toBe('invalid_proof');
-        expect(error.message).toContain('Missing extensions.zk_credential.commitment');
+        expect(error.message).toContain('Missing extensions.zk-credential.commitment');
     });
 });

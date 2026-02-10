@@ -14,7 +14,7 @@ function createMockRequest(
   url = '/api/test',
   body?: Record<string, unknown>
 ): Partial<Request> {
-  const isBody = 'zk_credential' in headersOrBody;
+  const isBody = 'zk-credential' in headersOrBody;
   const headersObj = {
     host: 'localhost:3000',
     ...(isBody ? {} : (headersOrBody as Record<string, string>)),
@@ -67,24 +67,21 @@ function createMockResponse(): Partial<Response> & {
 
 /**
  * Create valid ZK credential body for testing
- * Uses zk_credential presentation format (spec §6.3)
+ * Uses zk-credential presentation format (spec §6.3)
  */
 function createValidBody(
   originToken: string,
   tier: number,
-  overrides: {
-    suite?: string;
-    currentTime?: number;
-  } = {}
+  overrides: Record<string, unknown> = {}
 ): Record<string, unknown> {
-  const suite = overrides.suite ?? 'pedersen-schnorr-poseidon-ultrahonk';
-  const currentTime = overrides.currentTime ?? Math.floor(Date.now() / 1000);
+  const suite = (overrides.suite as string) ?? 'pedersen-schnorr-poseidon-ultrahonk';
+  const currentTime = (overrides.currentTime as number) ?? Math.floor(Date.now() / 1000);
 
   return {
-    zk_credential: {
+    'zk-credential': {
       version: '0.1.0',
       suite,
-      proof: Buffer.from([1, 2, 3, 4]).toString('base64'),
+      proof: Buffer.from([1, 2, 3, 4]).toString('base64url'),
       current_time: currentTime,
       public_outputs: {
         origin_token: originToken,
@@ -118,7 +115,7 @@ describe('ZkCredentialMiddleware', () => {
   });
 
   describe('verifyRequest - body validation', () => {
-    it('should reject when zk_credential body is missing', async () => {
+    it('should reject when zk-credential body is missing', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const req = createMockRequest({});
 
@@ -127,20 +124,20 @@ describe('ZkCredentialMiddleware', () => {
       expect(result.valid).toBe(false);
       if (!result.valid) {
         expect(result.errorCode).toBe('credential_missing');
-        expect(result.message).toBe('Missing zk_credential presentation');
+        expect(result.message).toBe('Missing zk-credential presentation');
       }
     });
 
-    it('should reject when zk_credential body has wrong format', async () => {
+    it('should reject when zk-credential body has wrong format', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
-      const req = createMockRequest({}, '/api/test', { zk_credential: 'invalid' });
+      const req = createMockRequest({}, '/api/test', { 'zk-credential': 'invalid' });
 
       const result = await middleware.verifyRequest(req as Request);
 
       expect(result.valid).toBe(false);
       if (!result.valid) {
         expect(result.errorCode).toBe('credential_missing');
-        expect(result.message).toBe('Missing zk_credential presentation');
+        expect(result.message).toBe('Missing zk-credential presentation');
       }
     });
 
@@ -160,7 +157,7 @@ describe('ZkCredentialMiddleware', () => {
     it('should reject invalid proof format', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
-      (body.zk_credential as Record<string, unknown>).proof = '';
+      (body['zk-credential'] as Record<string, unknown>).proof = '';
       const req = createMockRequest({}, '/api/test', body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -176,7 +173,7 @@ describe('ZkCredentialMiddleware', () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
       // Invalid characters like @ and # are not valid in base64
-      (body.zk_credential as Record<string, unknown>).proof = 'invalid@#chars';
+      (body['zk-credential'] as Record<string, unknown>).proof = 'invalid@#chars';
       const req = createMockRequest({}, '/api/test', body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -192,7 +189,7 @@ describe('ZkCredentialMiddleware', () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
       // Spaces are not valid in strict base64
-      (body.zk_credential as Record<string, unknown>).proof = 'AQID BAU=';
+      (body['zk-credential'] as Record<string, unknown>).proof = 'AQID BAU=';
       const req = createMockRequest({}, '/api/test', body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -208,7 +205,7 @@ describe('ZkCredentialMiddleware', () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
       // This would pass Buffer.from() but fails round-trip check
-      (body.zk_credential as Record<string, unknown>).proof = 'QQ='; // Should be 'QQ==' for proper padding
+      (body['zk-credential'] as Record<string, unknown>).proof = 'QQ='; // Should be 'QQ==' for proper padding
       const req = createMockRequest({}, '/api/test', body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -224,7 +221,7 @@ describe('ZkCredentialMiddleware', () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
       // Valid base64 encoding
-      (body.zk_credential as Record<string, unknown>).proof = Buffer.from([1, 2, 3, 4]).toString('base64');
+      (body['zk-credential'] as Record<string, unknown>).proof = Buffer.from([1, 2, 3, 4]).toString('base64url');
       const req = createMockRequest({}, '/api/test', body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -321,7 +318,7 @@ describe('ZkCredentialMiddleware', () => {
         skipProofVerification: false,
       });
       const body = createValidBody('0xabc', 1);
-      (body.zk_credential as Record<string, unknown>).proof = '';
+      (body['zk-credential'] as Record<string, unknown>).proof = '';
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -338,7 +335,7 @@ describe('ZkCredentialMiddleware', () => {
         skipProofVerification: false,
       });
       const body = createValidBody('0xabc', 1);
-      (body.zk_credential as Record<string, unknown>).proof = '';
+      (body['zk-credential'] as Record<string, unknown>).proof = '';
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -360,13 +357,13 @@ describe('ZkCredentialMiddleware', () => {
       const body = {
         payment: { some: 'payment' },
         extensions: {
-          zk_credential: {
+          'zk-credential': {
             commitment: 'pedersen-schnorr-poseidon-ultrahonk:0x123'
           }
         }
       };
       const req = createMockRequest({});
-      req.body = body; // Explicitly set body — createMockRequest only auto-detects zk_credential bodies
+      req.body = body; // Explicitly set body — createMockRequest only auto-detects zk-credential bodies
       const res = createMockResponse();
       const next = vi.fn();
 

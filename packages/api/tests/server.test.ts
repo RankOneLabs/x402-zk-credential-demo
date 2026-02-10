@@ -4,15 +4,15 @@ import { createApiServer, type ApiServerConfig } from '../src/server.js';
 
 /**
  * Helper to create valid ZK credential body
- * Uses the zk_credential presentation format (spec §6.3)
+ * Uses the zk-credential presentation format (spec §6.3)
  * Uses skip mode so proof content doesn't matter
  */
 function createZkBody(originToken: string, tier: number) {
   return {
-    zk_credential: {
+    'zk-credential': {
       version: '0.1.0',
       suite: 'pedersen-schnorr-poseidon-ultrahonk',
-      proof: Buffer.from([1, 2, 3, 4]).toString('base64'),
+      proof: Buffer.from([1, 2, 3, 4]).toString('base64url'),
       current_time: Math.floor(Date.now() / 1000),
       public_outputs: {
         origin_token: originToken,
@@ -64,7 +64,7 @@ describe('API Server', () => {
   });
 
   describe('Protected endpoints - authentication', () => {
-    it('should return 402 Payment Required without zk_credential body', async () => {
+    it('should return 402 Payment Required without zk-credential body', async () => {
       const { app } = createApiServer(config);
 
       const res = await request(app).get('/api/whoami');
@@ -79,10 +79,10 @@ describe('API Server', () => {
     it('should reject requests with unsupported suite', async () => {
       const { app } = createApiServer(config);
       const body = {
-        zk_credential: {
+        'zk-credential': {
           version: '0.1.0',
           suite: 'unknown-scheme',
-          proof: Buffer.from([1]).toString('base64'),
+          proof: Buffer.from([1]).toString('base64url'),
           current_time: Math.floor(Date.now() / 1000),
           public_outputs: { origin_token: '0xabc', tier: 1 },
         },
