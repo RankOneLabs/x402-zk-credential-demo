@@ -149,10 +149,10 @@ The client must transmit `current_time` because the proof is bound to the exact 
     "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
-    "proof": "<base64-encoded-proof>",
+    "proof": "<base64url-proof>",
     "current_time": 1707004800,
     "public_outputs": {
-      "origin_token": "0x...",
+      "origin_token": "<base64url-origin-token>",
       "tier": 1
     }
   }
@@ -164,7 +164,7 @@ The client must transmit `current_time` because the proof is bound to the exact 
 | `version` | Yes | Spec version for protocol negotiation |
 | `suite` | Yes | Suite identifier so server selects correct verifier |
 | `kid` | Recommended | Key ID for key rotation (see §18) |
-| `proof` | Yes | Base64-encoded ZK proof |
+| `proof` | Yes | Base64url-encoded ZK proof |
 | `current_time` | Yes | Unix timestamp used as public input during proof generation; server validates ±60s drift (§11.1) |
 | `public_outputs` | Yes | Circuit outputs |
 
@@ -193,8 +193,8 @@ The client must transmit `current_time` because the proof is bound to the exact 
       "tier": 1,
       "identity_limit": 1000,
       "expires_at": 1707004800,
-      "commitment": "0x...",
-      "signature": "0x..."
+      "commitment": "<base64url-commitment>",
+      "signature": "<base64url-signature>"
     }
   }
 }
@@ -250,7 +250,7 @@ When returning `402 Payment Required`, servers supporting zk-credential include 
     "zk-credential": {
       "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
-      "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04abc...",
+      "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:<base64url-pubkey>",
       "max_credential_ttl": 86400
     }
   }
@@ -296,7 +296,7 @@ Client sends payment with commitment in request body:
   },
   "extensions": {
     "zk-credential": {
-      "commitment": "pedersen-schnorr-poseidon-ultrahonk:0x..."
+      "commitment": "pedersen-schnorr-poseidon-ultrahonk:<base64url-commitment>"
     }
   }
 }
@@ -312,7 +312,7 @@ Server calls facilitator's `/settle` endpoint:
   "paymentRequirements": { /* from server config */ },
   "extensions": {
     "zk-credential": {
-      "commitment": "pedersen-schnorr-poseidon-ultrahonk:0x..."
+      "commitment": "pedersen-schnorr-poseidon-ultrahonk:<base64url-commitment>"
     }
   }
 }
@@ -336,8 +336,8 @@ Facilitator returns credential in settlement response body:
         "tier": 1,
         "identity_limit": 1000,
         "expires_at": 1707004800,
-        "commitment": "0x...",
-        "signature": "0x..."
+        "commitment": "<base64url-commitment>",
+        "signature": "<base64url-signature>"
       }
     }
   }
@@ -398,10 +398,10 @@ Content-Type: application/json
     "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
-    "proof": "<base64-proof>",
+    "proof": "<base64url-proof>",
     "current_time": 1707004800,
     "public_outputs": {
-      "origin_token": "0x...",
+      "origin_token": "<base64url-origin-token>",
       "tier": 1
     }
   }
@@ -596,29 +596,27 @@ Reference implementation: `x402-zk-credential-noir`
 
 ### 13.2 Wire Encoding
 
-All binary fields are hex-encoded with `0x` prefix when transmitted as JSON strings.
+All binary fields are encoded using **base64url without padding** (RFC 4648) when transmitted as JSON strings.
 
-| Type | Encoding | Size |
-|------|----------|------|
-| **Field element** | 32-byte big-endian | 64 hex chars |
-| **Scalar** | 32-byte big-endian | 64 hex chars |
-| **Point (uncompressed)** | `04` \|\| x (32 bytes) \|\| y (32 bytes) | 130 hex chars |
-| **Point (compressed)** | `02`/`03` \|\| x (32 bytes) | 66 hex chars |
+| Type | Encoding |
+|------|----------|
+| **Field element** | 32-byte big-endian $\rightarrow$ base64url |
+| **Scalar** | 32-byte big-endian $\rightarrow$ base64url |
+| **Point (uncompressed)** | `04` \|\| x (32 bytes) \|\| y (32 bytes) $\rightarrow$ base64url |
+| **Point (compressed)** | `02`/`03` \|\| x (32 bytes) $\rightarrow$ base64url |
 
 **Commitment encoding:**
 
 Commitments are curve points. Wire format uses suite prefix + uncompressed point:
 ```
-"commitment": "pedersen-schnorr-poseidon-ultrahonk:0x04<x><y>"
+"commitment": "pedersen-schnorr-poseidon-ultrahonk:<base64url(0x04 || x || y)>"
 ```
-
-Where `<x>` and `<y>` are 32-byte hex-encoded coordinates.
 
 **Signature encoding:**
 
 Schnorr signatures consist of `(R, s)` where R is a point and s is a scalar. Wire format concatenates components:
 ```
-"signature": "0x<R_x><R_y><s>"
+"signature": "<base64url(R_x || R_y || s)>"
 ```
 
 Where:
@@ -626,13 +624,13 @@ Where:
 - `R_y`: 32 bytes (y-coordinate of R)
 - `s`: 32 bytes (scalar)
 
-Total: 96 bytes = 192 hex characters.
+Total: 96 bytes.
 
 **Proof encoding:**
 
-Proofs are opaque binary blobs, base64-encoded:
+Proofs are opaque binary blobs, encoded as:
 ```
-"proof": "<base64-encoded-bytes>"
+"proof": "<base64url(proof_bytes)>"
 ```
 
 ---
@@ -774,14 +772,6 @@ Server steps for requests without `zk-credential`:
 | DoS via verification | Rate limiting, proof size limits |
 | Cross-server replay | `origin_id` includes host |
 
-### 17.2 Denial of Service (DoS) Guidance
-
-Verification is computationally expensive. Servers SHOULD perform cheap pre-checks before verification:
-- Enforce `Content-Length` limits (e.g., 64KB).
-- Validate `current_time` skew (±60s).
-- Check `suite` support (fast fail on unsupported suites).
-- Apply rate limits based on IP or other factors before parsing the proof.
-
 ### 17.1 Timing Correlation Attack
 
 **Attack:** Issuers can link wallet addresses to commitments via timing — credentials are issued immediately after payment.
@@ -791,6 +781,14 @@ Verification is computationally expensive. Servers SHOULD perform cheap pre-chec
 - Consider decoupled payment token approach:
   1. Pay → receive opaque token
   2. Redeem token for credential (breaks timing link)
+
+### 17.2 Denial of Service (DoS) Guidance
+
+Verification is computationally expensive. Servers SHOULD perform cheap pre-checks before verification:
+- Enforce `Content-Length` limits (e.g., 64KB).
+- Validate `current_time` skew (±60s).
+- Check `suite` support (fast fail on unsupported suites).
+- Apply rate limits based on IP or other factors before parsing the proof.
 
 ---
 
@@ -1013,10 +1011,10 @@ Content-Type: application/json
     "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
-    "proof": "<base64-encoded-proof>",
+    "proof": "<base64url-proof>",
     "current_time": 1707004800,
     "public_outputs": {
-      "origin_token": "0x...",
+      "origin_token": "<base64url-origin-token>",
       "tier": 1
     }
   }
