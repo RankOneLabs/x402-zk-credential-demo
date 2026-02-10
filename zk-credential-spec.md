@@ -446,7 +446,7 @@ The proof produces:
 origin_id = Poseidon(stringToField(canonical_origin))
 ```
 
-Where `canonical_origin` is:
+Where `stringToField(s) = SHA-256(s) mod p`, with `p` the BN254 scalar field order, and `canonical_origin` is:
 ```
 scheme + "://" + lowercase(host) + normalized_path
 ```

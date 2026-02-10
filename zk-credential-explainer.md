@@ -39,5 +39,5 @@ Proof and credential artifacts can exceed common HTTP header limits (proof sizes
 
 ## Status
 - A working demo exercises the flow (x402 payment → credential issuance → proof-based access).
-- The spec defines `zk-credential` (v0.2.0), body transport, public outputs, key rotation via `kid`, and wire encoding for commitments and signatures. Servers can expose issuer keys at `/.well-known/zk-credential-keys` (HTTP GET) to support rotation; deployments may also provision keys out-of-band.
+- The spec defines `zk-credential` (v0.1.0), body transport, public outputs, key rotation via `kid`, and wire encoding for commitments and signatures. Servers can expose issuer keys at `/.well-known/zk-credential-keys` (HTTP GET) to support rotation; deployments may also provision keys out-of-band.
 - Suites can be SNARK or STARK based.

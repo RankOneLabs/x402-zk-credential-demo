@@ -35,12 +35,10 @@ describe('Facilitator Server', () => {
 
         const key = data.keys[0];
         expect(key.kid).toBe('test-key-1');
-        expect(key.kty).toBe('ZK');
-        expect(key.crv).toBe('BN254');
-        expect(key.alg).toBe('pedersen-schnorr-poseidon-ultrahonk');
-        // Base64URL encoded 32-byte values => ~43 chars
-        expect(key.x).toMatch(/^[A-Za-z0-9_-]{43}$/);
-        expect(key.y).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(key.suite).toBe('pedersen-schnorr-poseidon-ultrahonk');
+        expect(key.pubkey).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:[A-Za-z0-9_-]+$/);
+        expect(key.valid_from).toBeTypeOf('number');
+        expect(key.valid_until).toBeNull();
     });
 
     it('should return 404 with structured error for unknown endpoints', async () => {
