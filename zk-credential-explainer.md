@@ -16,7 +16,7 @@ ZK Credentials extend the x402 flow by adding an issuance step after settlement 
 The credential is short-lived and bounded, and includes:
 - `service_id` binding (prevents cross-service replay)
 - `tier` (access level derived from payment amount)
-- `issued_at`, `expires_at`
+- `expires_at` (credential expiry)
 - `identity_budget` (maximum distinct identities)
 - facilitator signature over the credential fields
 

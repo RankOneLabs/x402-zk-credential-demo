@@ -2,7 +2,7 @@
  * ZK Credential Verification Middleware
  * 
  * Verifies ZK proofs and enforces rate limits.
- * Compliant with x402 zk-credential spec v0.2.0
+ * Compliant with x402 zk-credential spec v0.1.0
  * 
  * **Security Note (Replay Protection):**
  * Proofs are valid within a time window (±60s) and could theoretically be
@@ -160,7 +160,7 @@ export class ZkCredentialMiddleware {
       ],
       extensions: {
         zk_credential: {
-          version: '0.2.0',
+          version: '0.1.0',
           credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
           facilitator_pubkey: this.getFacilitatorPubkeyPrefixed(),
           facilitator_url: this.config.facilitatorUrl,
@@ -393,7 +393,8 @@ export class ZkCredentialMiddleware {
     suite: string;
     kid?: string;
     proofB64: string;
-    publicOutputs: { originToken: string; tier: number; expiresAt: number; currentTime?: number };
+    currentTime: number;
+    publicOutputs: { originToken: string; tier: number };
   } | null {
     const body = req.body as Record<string, unknown> | undefined;
     const zkCredential = (body as { zk_credential?: Record<string, unknown> } | undefined)?.zk_credential;
@@ -404,6 +405,7 @@ export class ZkCredentialMiddleware {
     const suite = zkCredential.suite;
     const kid = zkCredential.kid;
     const proofB64 = zkCredential.proof;
+    const currentTime = zkCredential.current_time;
     const publicOutputs = zkCredential.public_outputs as Record<string, unknown> | undefined;
 
     if (typeof suite !== 'string' || typeof proofB64 !== 'string' || !publicOutputs) {
@@ -412,22 +414,34 @@ export class ZkCredentialMiddleware {
 
     const originToken = publicOutputs.origin_token;
     const tier = publicOutputs.tier;
-    const expiresAt = publicOutputs.expires_at;
-    const currentTime = publicOutputs.current_time;
 
-    if (typeof originToken !== 'string' || typeof tier !== 'number' || typeof expiresAt !== 'number') {
+    if (typeof originToken !== 'string' || typeof tier !== 'number') {
       return null;
     }
-    // current_time is optional; if present it must be a number
-    if (currentTime !== undefined && typeof currentTime !== 'number') {
+    // current_time is required — the proof is bound to the exact value used during
+    // generation, so the server cannot substitute its own clock (§6.3, §11.1)
+    if (typeof currentTime !== 'number') {
       return null;
     }
 
+    // Validate numeric fields that will be converted to BigInt later.
+    // We require finite, non-negative safe integers to avoid runtime BigInt errors.
+    if (
+      !Number.isFinite(tier) ||
+      !Number.isSafeInteger(tier) ||
+      tier < 0 ||
+      !Number.isFinite(currentTime) ||
+      !Number.isSafeInteger(currentTime) ||
+      currentTime < 0
+    ) {
+      return null;
+    }
     return {
       suite,
       kid: typeof kid === 'string' ? kid : undefined,
       proofB64,
-      publicOutputs: { originToken, tier, expiresAt, currentTime: typeof currentTime === 'number' ? currentTime : undefined },
+      currentTime,
+      publicOutputs: { originToken, tier },
     };
   }
 
@@ -468,10 +482,9 @@ export class ZkCredentialMiddleware {
    * 3. Check suite support
    * 4. Construct public inputs: (service_id, current_time, origin_id, facilitator_pubkey)
    * 5. Verify proof
-   * 6. Extract outputs: (origin_token, tier, expires_at)
-   * 7. If expired → credential_expired
-   * 8. Check tier meets endpoint requirement
-   * 9. Return success (rate limiting handled by middleware)
+   * 6. Extract outputs: (origin_token, tier)
+   * 7. Check tier meets endpoint requirement
+   * 8. Return success (rate limiting handled by middleware)
    */
   async verifyRequest(req: Request): Promise<CredentialVerificationResult> {
     // Step 1-2: Parse request body
@@ -494,29 +507,20 @@ export class ZkCredentialMiddleware {
 
     const originId = this.computeOriginId(req);
     const serverTime = BigInt(Math.floor(Date.now() / 1000));
-    // Use the current_time from the presentation if provided (matches the proof),
-    // otherwise fall back to server time
-    const proofTime = presentation.publicOutputs.currentTime != null
-      ? BigInt(presentation.publicOutputs.currentTime)
-      : serverTime;
+    // Use the current_time from the presentation (matches the proof)
+    const proofTime = BigInt(presentation.currentTime);
 
     // Validate the proof's current_time is within acceptable drift (±60 seconds)
-    if (presentation.publicOutputs.currentTime != null) {
-      const MAX_TIME_DRIFT = 60n;
-      const timeDiff = serverTime > proofTime ? serverTime - proofTime : proofTime - serverTime;
-      if (timeDiff > MAX_TIME_DRIFT) {
-        return { valid: false, errorCode: 'invalid_proof', message: `Proof time drift too large: ${timeDiff}s` };
-      }
+    const MAX_TIME_DRIFT = 60n;
+    const timeDiff = serverTime > proofTime ? serverTime - proofTime : proofTime - serverTime;
+    if (timeDiff > MAX_TIME_DRIFT) {
+      return { valid: false, errorCode: 'invalid_proof', message: `Proof time drift too large: ${timeDiff}s` };
     }
 
     // Skip proof verification in development mode
     if (this.config.skipProofVerification) {
       console.log(`[ZkCredential] Skipping proof verification (dev mode)`);
-      const { tier, originToken, expiresAt } = presentation.publicOutputs;
-
-      if (expiresAt < Number(serverTime - 60n)) {
-        return { valid: false, errorCode: 'credential_expired', message: 'Credential expired' };
-      }
+      const { tier, originToken } = presentation.publicOutputs;
 
       // Still check minimum tier requirement even in skip mode
       if (tier < (this.config.minTier ?? 0)) {
@@ -534,7 +538,6 @@ export class ZkCredentialMiddleware {
       bigIntToHex(this.config.facilitatorPubkey.y),
       presentation.publicOutputs.originToken,
       bigIntToHex(BigInt(presentation.publicOutputs.tier)),
-      bigIntToHex(BigInt(presentation.publicOutputs.expiresAt)),
     ];
 
     const proofData = {
@@ -553,11 +556,6 @@ export class ZkCredentialMiddleware {
       // Step 8: Extract outputs (origin_token, tier)
       const originToken = result.outputs?.originToken ?? '';
       const tier = result.outputs?.tier ?? 0;
-      const expiresAt = result.outputs?.expiresAt ?? 0;
-
-      if (expiresAt < Number(serverTime - 60n)) {
-        return { valid: false, errorCode: 'credential_expired', message: 'Credential expired' };
-      }
 
       // Step 10-11: Check minimum tier requirement
       if (tier < (this.config.minTier ?? 0)) {

@@ -1,5 +1,5 @@
 // x402 ZK Credential Circuit
-// Proves: "I hold a valid credential for this service" while only revealing the credential's tier, expiry, and origin token publicly
+// Proves: "I hold a valid credential for this service" while only revealing the credential's tier and origin token publicly
 
 mod pedersen;
 mod schnorr;
@@ -22,7 +22,6 @@ fn main(
     cred_service_id: Field,
     cred_tier: Field,
     cred_identity_limit: Field,
-    cred_issued_at: Field,
     cred_expires_at: Field,
     cred_commitment_x: Field,
     cred_commitment_y: Field,
@@ -39,8 +38,8 @@ fn main(
     
     // === Private inputs: Presentation context ===
     identity_index: Field,
-) -> pub (Field, Field, Field) {
-    // Returns: (origin_token, tier, expires_at)
+) -> pub (Field, Field) {
+    // Returns: (origin_token, tier)
     
     // 1. Verify Pedersen commitment opens correctly
     //    C = nullifier_seed * G + blinding_factor * H
@@ -59,10 +58,7 @@ fn main(
     assert(utils::field_lt(identity_index, cred_identity_limit), "Identity index exceeds limit");
     
     // 5. Compute message hash for signature verification
-    // We split 7 inputs into 4 and 3 to ensure compatibility with JS poseidon-lite
-    let h1 = bn254::hash_4([cred_service_id, cred_tier, cred_identity_limit, cred_issued_at]);
-    let h2 = bn254::hash_3([cred_expires_at, cred_commitment_x, cred_commitment_y]);
-    let msg = bn254::hash_2([h1, h2]);
+    let msg = bn254::hash_6([cred_service_id, cred_tier, cred_identity_limit, cred_expires_at, cred_commitment_x, cred_commitment_y]);
     
     // 6. Verify Schnorr signature
     let sig_valid = schnorr::verify(
@@ -79,8 +75,8 @@ fn main(
     // 7. Derive origin-bound token for rate limiting
     let origin_token = bn254::hash_3([nullifier_seed, origin_id, identity_index]);
     
-    // 8. Return tier and expiry for access control
-    (origin_token, cred_tier, cred_expires_at)
+    // 8. Return tier for access control (expiry enforced by assertion above)
+    (origin_token, cred_tier)
 }
 
 #[test]

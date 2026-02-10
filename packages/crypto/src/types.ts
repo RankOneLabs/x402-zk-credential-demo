@@ -1,6 +1,6 @@
 /**
  * Common types for cryptographic operations
- * Compliant with x402 zk-credential spec v0.2.0
+ * Compliant with x402 zk-credential spec v0.1.0
  * 
  * Uses @x402/core types for payment layer, extends with zk_credential types.
  */
@@ -58,7 +58,6 @@ export interface SignedCredential {
   serviceId: bigint;
   tier: number;
   identityLimit: number;
-  issuedAt: number;
   expiresAt: number;
   userCommitment: Point;
   signature: SchnorrSignature;
@@ -83,7 +82,6 @@ export interface PublicInputs {
 export interface ProofOutputs {
   originToken: bigint;
   tier: number;
-  expiresAt: number;
 }
 
 // =============================================================================
@@ -92,7 +90,7 @@ export interface ProofOutputs {
 
 /** zk_credential extension in 402 response (spec §7) */
 export interface ZKCredentialExtension {
-  version: '0.2.0';
+  version: '0.1.0';
   credential_suites: ZKCredentialSuite[];
   facilitator_pubkey: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
   facilitator_url?: string;   // URL to send settlement requests
@@ -150,7 +148,6 @@ export interface CredentialWireFormat {
   service_id: string;
   tier: number;
   identity_limit: number;
-  issued_at: number;
   expires_at: number;
   commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:0x..."
   signature: string;  // hex-encoded ("0x<R_x><R_y><s>")
@@ -173,7 +170,6 @@ export interface X402PaymentResponse {
 
 /** ZK credential error codes per spec §14 */
 export type ZKCredentialErrorCode =
-  | 'credential_expired'      // 402
   | 'credential_missing'      // 402
   | 'tier_insufficient'       // 402
   | 'unsupported_suite'       // 400
@@ -204,7 +200,6 @@ export interface ZKCredentialError {
 
 /** Map error codes to HTTP status */
 export const ERROR_CODE_TO_STATUS: Record<ZKCredentialErrorCode, number> = {
-  credential_expired: 402,
   credential_missing: 402,
   tier_insufficient: 402,
   unsupported_suite: 400,

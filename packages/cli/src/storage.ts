@@ -15,7 +15,6 @@ export interface StoredCredential {
   kid?: string;
   tier: number;
   identityLimit: number;
-  issuedAt: number;
   expiresAt: number;
   userCommitment: { x: string; y: string };
   signature: { r: { x: string; y: string }; s: string };

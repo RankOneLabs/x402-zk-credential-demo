@@ -25,7 +25,7 @@ vi.mock('@demo/crypto', async (importOriginal) => {
       },
       s: 0xccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccn,
     }),
-    poseidonHash7: vi.fn().mockReturnValue(0x123456789abcdef0n),
+    poseidonHash6: vi.fn().mockReturnValue(0x123456789abcdef0n),
   };
 });
 
@@ -162,8 +162,7 @@ describe('CredentialIssuer.settle()', () => {
       expect(cred.service_id).toBe('0x00000000000000000000000000000000000000000000000000000000000003e9'); // 1001n
       expect(cred.tier).toBe(1); // $0.10 qualifies for tier 1
       expect(cred.identity_limit).toBe(10);
-      expect(cred.issued_at).toBe(Math.floor(new Date('2026-01-15T12:00:00Z').getTime() / 1000));
-      expect(cred.expires_at).toBe(cred.issued_at + 3600); // tier 1 duration
+      expect(cred.expires_at).toBe(Math.floor(new Date('2026-01-15T12:00:00Z').getTime() / 1000) + 3600); // tier 1 duration
       expect(cred.commitment).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:0x04[a-f0-9]{128}$/);
       expect(cred.signature).toMatch(/^0x[a-f0-9]{192}$/); // r.x + r.y + s
     });
@@ -182,7 +181,7 @@ describe('CredentialIssuer.settle()', () => {
       expect(response.extensions.zk_credential.credential.tier).toBe(2); // $1.00 qualifies for tier 2
       expect(response.extensions.zk_credential.credential.identity_limit).toBe(50);
       expect(response.extensions.zk_credential.credential.expires_at).toBe(
-        response.extensions.zk_credential.credential.issued_at + 86400 // tier 2 duration
+        Math.floor(new Date('2026-01-15T12:00:00Z').getTime() / 1000) + 86400 // tier 2 duration
       );
     });
 

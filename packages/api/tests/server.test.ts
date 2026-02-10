@@ -10,13 +10,13 @@ import { createApiServer, type ApiServerConfig } from '../src/server.js';
 function createZkBody(originToken: string, tier: number) {
   return {
     zk_credential: {
-      version: '0.2.0',
+      version: '0.1.0',
       suite: 'pedersen-schnorr-poseidon-ultrahonk',
       proof: Buffer.from([1, 2, 3, 4]).toString('base64'),
+      current_time: Math.floor(Date.now() / 1000),
       public_outputs: {
         origin_token: originToken,
         tier,
-        expires_at: Math.floor(Date.now() / 1000) + 60,
       },
     },
   };
@@ -80,10 +80,11 @@ describe('API Server', () => {
       const { app } = createApiServer(config);
       const body = {
         zk_credential: {
-          version: '0.2.0',
+          version: '0.1.0',
           suite: 'unknown-scheme',
           proof: Buffer.from([1]).toString('base64'),
-          public_outputs: { origin_token: '0xabc', tier: 1, expires_at: Math.floor(Date.now() / 1000) + 60 },
+          current_time: Math.floor(Date.now() / 1000),
+          public_outputs: { origin_token: '0xabc', tier: 1 },
         },
       };
 

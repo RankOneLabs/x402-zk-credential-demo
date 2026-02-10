@@ -28,11 +28,10 @@ export interface ProofData {
 
 export interface ProofVerificationResult {
   valid: boolean;
-  /** Extracted public outputs: [origin_token, tier, expires_at] */
+  /** Extracted public outputs: [origin_token, tier] */
   outputs?: {
     originToken: string;
     tier: number;
-    expiresAt: number;
   };
   error?: string;
 }
@@ -144,9 +143,9 @@ export class ZkVerifier {
    */
   async verify(proofData: ProofData): Promise<ProofVerificationResult> {
     // Validate publicInputs has enough elements for outputs
-    // Circuit layout: 5 public inputs + 3 public outputs (origin_token, tier, expires_at)
+    // Circuit layout: 5 public inputs + 2 public outputs (origin_token, tier)
     const NUM_PUBLIC_INPUTS = 5;
-    const NUM_PUBLIC_OUTPUTS = 3;
+    const NUM_PUBLIC_OUTPUTS = 2;
     const REQUIRED_LENGTH = NUM_PUBLIC_INPUTS + NUM_PUBLIC_OUTPUTS;
 
     if (proofData.publicInputs.length < REQUIRED_LENGTH) {
@@ -159,11 +158,10 @@ export class ZkVerifier {
     // Extract outputs (after the public inputs)
     const originToken = proofData.publicInputs[NUM_PUBLIC_INPUTS];
     const tierHex = proofData.publicInputs[NUM_PUBLIC_INPUTS + 1];
-    const expiresAtHex = proofData.publicInputs[NUM_PUBLIC_INPUTS + 2];
 
     // Validate extracted values exist (TypeScript narrowing)
-    if (originToken === undefined || tierHex === undefined || expiresAtHex === undefined) {
-      return { valid: false, error: 'Missing origin_token, tier, or expires_at in publicInputs' };
+    if (originToken === undefined || tierHex === undefined) {
+      return { valid: false, error: 'Missing origin_token or tier in publicInputs' };
     }
 
     const tier = parseInt(tierHex, 16);
@@ -171,17 +169,12 @@ export class ZkVerifier {
       return { valid: false, error: 'Invalid tier value in publicInputs' };
     }
 
-    const expiresAt = parseInt(expiresAtHex, 16);
-    if (isNaN(expiresAt)) {
-      return { valid: false, error: 'Invalid expires_at value in publicInputs' };
-    }
-
     // Skip verification in dev mode
     if (this.config.skipVerification) {
       console.log('[ZkVerifier] Skipping verification (dev mode)');
       return {
         valid: true,
-        outputs: { originToken, tier, expiresAt },
+        outputs: { originToken, tier },
       };
     }
 
@@ -195,7 +188,7 @@ export class ZkVerifier {
     try {
       // Verify the proof
       // Public inputs order: service_id, current_time, origin_id, facilitator_pubkey_x, facilitator_pubkey_y
-      // Public outputs: origin_token, tier, expires_at
+      // Public outputs: origin_token, tier
       // UltraHonkBackend expects proof as Uint8Array, not Buffer
       const proofArray = proofData.proof instanceof Uint8Array
         ? proofData.proof
@@ -213,7 +206,7 @@ export class ZkVerifier {
       // Outputs already extracted and validated above
       return {
         valid: true,
-        outputs: { originToken, tier, expiresAt },
+        outputs: { originToken, tier },
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -6,7 +6,7 @@ import {
     pedersenCommit,
     generateKeypair,
     schnorrSign,
-    poseidonHash7,
+    poseidonHash6,
     hexToBigInt,
     bigIntToHex
 } from '@demo/crypto';
@@ -28,7 +28,6 @@ async function main() {
     const originId = 12345n;
     const credTier = 1n;
     const credIdentityLimit = 1000n;
-    const credIssuedAt = currentTime - 1000n;
     const credExpiresAt = currentTime + 86400n;
     const identityIndex = 0n;
 
@@ -36,11 +35,10 @@ async function main() {
     const { secretKey, publicKey } = await generateKeypair();
     const commitment = await pedersenCommit(nullifierSeed, blindingFactor);
 
-    const message = poseidonHash7(
+    const message = poseidonHash6(
         serviceId,
         credTier,
         credIdentityLimit,
-        credIssuedAt,
         credExpiresAt,
         commitment.point.x,
         commitment.point.y
@@ -64,7 +62,6 @@ async function main() {
         cred_service_id: fmt(serviceId),
         cred_tier: fmt(credTier),
         cred_identity_limit: fmt(credIdentityLimit),
-        cred_issued_at: fmt(credIssuedAt),
         cred_expires_at: fmt(credExpiresAt),
         cred_commitment_x: fmt(commitment.point.x),
         cred_commitment_y: fmt(commitment.point.y),

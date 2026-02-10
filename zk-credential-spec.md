@@ -1,7 +1,7 @@
 # x402 Extension: ZK Credential
 
 **Extension ID:** `zk-credential`  
-**Version:** 0.2.0  
+**Version:** 0.1.0  
 **Status:** Draft  
 **Last Updated:** 2026-02-06  
 **x402 Compatibility:** v2
@@ -97,7 +97,7 @@ PHASE 2: Private Redemption (separate requests, unlinkable to payment)
 8.  Server:              Verify proof locally (no facilitator call)
 9.  Server → Client:     200 OK + resource
 
-(Steps 7-9 repeat until credential expires or presentation_budget exhausted)
+(Steps 7-9 repeat until credential expires or identity_limit exhausted)
 ```
 
 ### 5.3 Why Two Phases Are Necessary
@@ -130,21 +130,23 @@ This is an **intentional deviation** from the "one request after payment" patter
 | `application/json` | REQUIRED | Base64-encoded binary fields |
 | `application/cbor` | OPTIONAL | More efficient for binary data |
 
-### 6.3 Request Envelope (Proof Presentation)
+### 6.3 Request Envelope (Proof Identity)
 
-Clients send only the proof and public outputs. Public inputs are server-derived (see §9.2).
+Clients send the proof, public outputs, and the `current_time` used during proof generation. All other public inputs are server-derived (see §9.2).
+
+The client must transmit `current_time` because the proof is bound to the exact value used during generation. The server uses this value to reconstruct the proof's public inputs, then validates that it falls within ±60s of the server's own clock (see §11.1).
 
 ```json
 {
   "zk_credential": {
-    "version": "0.2.0",
+    "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
     "proof": "<base64-encoded-proof>",
+    "current_time": 1707004800,
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "expires_at": 1707004800
+      "tier": 1
     }
   }
 }
@@ -156,7 +158,15 @@ Clients send only the proof and public outputs. Public inputs are server-derived
 | `suite` | Yes | Suite identifier so server selects correct verifier |
 | `kid` | Recommended | Key ID for key rotation (see §18) |
 | `proof` | Yes | Base64-encoded ZK proof |
-| `public_outputs` | Yes | Circuit outputs extracted from proof |
+| `current_time` | Yes | Unix timestamp used as public input during proof generation; server validates ±60s drift (§11.1) |
+| `public_outputs` | Yes | Circuit outputs |
+
+**`public_outputs` fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `origin_token` | Yes | Unlinkable rate-limiting token (circuit output) |
+| `tier` | Yes | Access level (circuit output) |
 
 ### 6.4 Response Envelope (Credential Issuance)
 
@@ -174,8 +184,7 @@ Clients send only the proof and public outputs. Public inputs are server-derived
       "suite": "pedersen-schnorr-poseidon-ultrahonk",
       "service_id": "0xabc123...",
       "tier": 1,
-      "presentation_budget": 1000,
-      "issued_at": 1706918400,
+      "identity_limit": 1000,
       "expires_at": 1707004800,
       "commitment": "0x...",
       "signature": "0x..."
@@ -232,7 +241,7 @@ When returning `402 Payment Required`, servers supporting zk-credential include 
   ],
   "extensions": {
     "zk_credential": {
-      "version": "0.2.0",
+      "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
       "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04abc...",
       "max_credential_ttl": 86400
@@ -318,8 +327,7 @@ Facilitator returns credential in settlement response body:
         "suite": "pedersen-schnorr-poseidon-ultrahonk",
         "service_id": "0xabc123...",
         "tier": 1,
-        "presentation_budget": 1000,
-        "issued_at": 1706918400,
+        "identity_limit": 1000,
         "expires_at": 1707004800,
         "commitment": "0x...",
         "signature": "0x..."
@@ -358,8 +366,7 @@ Server returns credential in response body (not header):
 | `suite` | Cryptographic suite used |
 | `service_id` | Identifies the service/API |
 | `tier` | Access level (0, 1, 2, ...) — derived from payment amount |
-| `presentation_budget` | Maximum distinct presentations derivable from credential |
-| `issued_at` | Unix timestamp of issuance |
+| `identity_limit` | Maximum distinct identities derivable from credential |
 | `expires_at` | Unix timestamp of expiration |
 | `commitment` | Client's commitment (echoed back) |
 | `signature` | Facilitator signature over all fields |
@@ -368,7 +375,7 @@ Server returns credential in response body (not header):
 
 ---
 
-## 9. Credential Presentation (Private Redemption)
+## 9. Credential Identity (Private Redemption)
 
 ### 9.1 Transport
 
@@ -381,14 +388,14 @@ Content-Type: application/json
 
 {
   "zk_credential": {
-    "version": "0.2.0",
+    "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
     "proof": "<base64-proof>",
+    "current_time": 1707004800,
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "expires_at": 1707004800
+      "tier": 1
     }
   }
 }
@@ -398,14 +405,16 @@ The `kid` field identifies which issuer key was used to sign the credential. The
 
 ### 9.2 Proof Public Inputs
 
-The server derives all public inputs — clients do not send them:
+The server constructs public inputs from its own configuration and the client-provided `current_time`:
 
 | Input | Source |
 |-------|--------|
 | `service_id` | Server configuration (see §10.4) |
-| `current_time` | Server clock (unix timestamp) |
+| `current_time` | From client's `zk_credential.current_time`; validated within ±60s of server clock (§11.1) |
 | `origin_id` | Computed from request URL per §10 |
 | `facilitator_pubkey` | Looked up by `kid` from request (see §18) |
+
+> **Why `current_time` is client-provided:** The proof is cryptographically bound to the exact `current_time` used during generation. If the server substituted its own clock value, verification would fail whenever the two clocks differ. Instead, the client transmits the value it used, and the server validates it is within acceptable drift before using it for verification.
 
 ### 9.3 Proof Public Outputs
 
@@ -415,7 +424,6 @@ The proof produces:
 |--------|---------|
 | `origin_token` | Unlinkable rate-limiting token |
 | `tier` | Access level for authorization |
-| `expires_at` | Credential expiry (server verifies freshness) |
 
 ---
 
@@ -478,28 +486,29 @@ The ZK proof MUST prove:
 
 1. **Commitment opening** — Prover knows `(nullifier_seed, blinding_factor)` that open the credential's commitment
 
-2. **Valid signature** — Issuer's signature over `(service_id, tier, presentation_budget, issued_at, expires_at, commitment)` is valid
+2. **Valid signature** — Issuer's signature over the credential's service binding, tier, identity limit, expiry, and commitment is valid
 
 3. **Service binding** — Credential's `service_id` matches public input
 
 4. **Not expired** — `expires_at >= current_time`
 
-5. **Presentation bound** — `presentation_index < presentation_budget`
+5. **Identity bound** — `identity_index < identity_limit`
 
-6. **Origin token derivation** — `origin_token = hash(nullifier_seed, origin_id, presentation_index)`
+6. **Origin token derivation** — `origin_token = hash(nullifier_seed, origin_id, identity_index)`
 
-**Public outputs:** `(origin_token, tier, expires_at)`
+**Public outputs:** `(origin_token, tier)`
 
 ### 11.1 Clock Skew Tolerance
 
-The circuit uses `current_time` as a public input (server-provided). To handle clock drift:
+The circuit uses `current_time` as a public input. The client chooses this value at proof generation time and transmits it in `zk_credential.current_time` (§6.3). The server uses the client-provided value to reconstruct public inputs for proof verification, but MUST validate it against the server's own clock:
 
-- Servers SHOULD accept proofs where the proof's `current_time` is within **±60 seconds** of the server's clock.
+- Servers MUST reject requests where `|zk_credential.current_time - server_clock| > 60 seconds`.
+- This drift check MUST occur **before** proof verification to avoid wasting computation on stale proofs.
 - Servers MAY include their current time in the 402 response for client synchronization:
   ```json
   { "server_time": 1707004800, ... }
   ```
-- Clients generating proofs SHOULD use a recent server-provided timestamp when available.
+- Clients generating proofs SHOULD use a recent server-provided timestamp when available, falling back to their own clock.
 
 ---
 
@@ -508,23 +517,23 @@ The circuit uses `current_time` as a public input (server-provided). To handle c
 ### 12.1 Origin Token
 
 ```
-origin_token = hash(nullifier_seed, origin_id, presentation_index)
+origin_token = hash(nullifier_seed, origin_id, identity_index)
 ```
 
 Properties:
 - **Deterministic** — Same inputs produce same token
 - **Origin-bound** — Different endpoints produce different tokens
 - **Unlinkable across origins** — Tokens for `/api/foo` and `/api/bar` are unlinkable
-- **Client-controlled linkability** — Reusing `presentation_index` produces same token (linkable); incrementing produces different token (unlinkable)
+- **Client-controlled linkability** — Reusing `identity_index` produces same token (linkable); incrementing produces different token (unlinkable)
 
 ### 12.2 Server Modes
 
-**Strict one-time presentation mode:**
+**Strict one-time identity mode:**
 - Server caches seen `origin_token` values until credential expiry
 - Duplicate tokens are rejected
 - Maximum privacy, higher storage cost
 
-**Reusable presentation mode:**
+**Reusable identity mode:**
 - Server accepts repeated `origin_token` values
 - Rate limiting applied per token
 - Lower privacy, lower storage cost
@@ -540,14 +549,14 @@ Servers track `origin_token` usage:
 
 ### 12.4 Client Behavior
 
-Clients manage `presentation_index`:
+Clients manage `identity_index`:
 - **Maximum privacy:** Increment for every request (different token each time)
 - **Stable identity per origin:** Reuse same index per origin
 - **Hybrid:** Increment within session, reset across sessions
 
 ### 12.5 Client-Side Proof Caching
 
-Clients MAY cache proofs for reuse within the same presentation index.
+Clients MAY cache proofs for reuse within the same identity index.
 
 Cached proofs become invalid when:
 - `current_time` drift exceeds server tolerance (recommended: 60s)
@@ -627,15 +636,16 @@ Proofs are opaque binary blobs, base64-encoded:
 
 | Code | HTTP | Meaning |
 |------|------|---------|
-| `credential_expired` | 402 | Credential expired, re-enter payment flow |
 | `credential_missing` | 402 | No credential provided |
 | `tier_insufficient` | 402 | Tier below requirement |
 | `unsupported_suite` | 400 | Suite not supported |
-| `invalid_proof` | 400 | Proof verification failed or malformed |
+| `invalid_proof` | 400 | Proof verification failed (includes expired credentials, see note below) |
 | `payload_too_large` | 413 | Proof body exceeds size limit |
 | `origin_mismatch` | 400 | Proof origin binding does not match request URL (if detected) |
 | `unsupported_media_type` | 415 | Content-Type not supported |
 | `rate_limited` | 429 | Origin token rate limited |
+
+> **Note:** Because `expires_at` is a private input enforced inside the circuit, the server cannot distinguish an expired credential from other proof failures. Both result in `invalid_proof`. Clients SHOULD track credential expiry locally and re-enter the payment flow before attempting to prove with an expired credential.
 
 ### 14.2 Structured Error Envelope
 
@@ -643,9 +653,9 @@ All error responses use this JSON structure:
 
 ```json
 {
-  "error": "credential_expired",
-  "code": 402,
-  "message": "Credential expired at 1706745600",
+  "error": "invalid_proof",
+  "code": 400,
+  "message": "Proof verification failed",
   "retry_after": 0,
   "credential_endpoint": "https://issuer.example.com/credentials/issue",
   "payment_requirements": { ... }
@@ -664,23 +674,28 @@ All error responses use this JSON structure:
 
 ### 14.3 Expired Credentials
 
-When credential is expired:
+Credential expiry (`expires_at >= current_time`) is enforced inside the circuit as a private constraint. The server never sees `expires_at` — an expired credential simply produces an invalid proof, returned as `invalid_proof`.
+
+**Client responsibility:** Clients MUST track `expires_at` locally and initiate a new payment flow before the credential expires. When a client detects local expiry:
+
+1. Discard the expired credential
+2. Re-discover the API (GET the protected endpoint to receive 402 with payment requirements)
+3. Complete a new payment to obtain a fresh credential
+
+**Server behavior:** If a proof fails verification for any reason (expired, wrong service, bad signature, etc.), the server returns:
 
 ```
-HTTP/1.1 402 Payment Required
+HTTP/1.1 400 Bad Request
 Content-Type: application/json
 
 {
-  "error": "credential_expired",
-  "code": 402,
-  "message": "Credential expired",
-  "payment_requirements": {
-    "x402Version": 2,
-    "accepts": [...],
-    "extensions": { "zk_credential": { ... } }
-  }
+  "error": "invalid_proof",
+  "code": 400,
+  "message": "Proof verification failed"
 }
 ```
+
+The server MAY include `payment_requirements` in the error response to help clients re-enter the payment flow.
 
 ---
 
@@ -694,12 +709,12 @@ Server steps for requests with `zk_credential` in body:
 4. If body too large → `413 payload_too_large` (include `max_body_bytes`)
 5. Look up `facilitator_pubkey` using `kid` (see §18). If unknown → `400 invalid_proof`
 6. Compute `origin_id` from request URL per §10
-7. Get `current_time` from server clock
-8. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
-9. Verify proof locally (no facilitator call needed)
-10. If invalid → `400 invalid_proof`
-11. Extract outputs: `(origin_token, tier, expires_at)`
-12. If `expires_at < current_time - 60` → `402 credential_expired` (with 60s tolerance)
+7. Extract `current_time` from client's `zk_credential.current_time`
+8. If `|current_time - server_clock| > 60s` → `400 invalid_proof` (clock drift exceeded)
+9. Construct public inputs: `(service_id, current_time, origin_id, facilitator_pubkey)`
+10. Verify proof locally (no facilitator call needed)
+11. If invalid → `400 invalid_proof`
+12. Extract outputs: `(origin_token, tier)`
 13. Check rate limit for `origin_token`
 14. If exceeded → `429 rate_limited`
 15. Check `tier` meets endpoint requirement
@@ -746,9 +761,9 @@ Server steps for requests without `zk_credential`:
 | Threat | Mitigation |
 |--------|------------|
 | Issuer key compromise | Key rotation, short credential expiry |
-| Credential theft | Short expiry, `presentation_budget` limit |
-| Replay attacks | `presentation_index` in token derivation |
-| Time manipulation | Server provides `current_time`; circuit outputs `expires_at` |
+| Credential theft | Short expiry, `identity_limit` limit |
+| Replay attacks | `identity_index` in token derivation |
+| Time manipulation | Client provides `current_time`; server rejects if drift from its own clock exceeds ±60s; circuit enforces `expires_at >= current_time` privately (server cannot distinguish expiry from other failures) |
 | DoS via verification | Rate limiting, proof size limits |
 | Cross-server replay | `origin_id` includes host |
 
@@ -809,7 +824,7 @@ Response:
 |----------|--------|-------|
 | Payment-redemption unlinkability | ✓ | Separate requests, ZK proof hides credential |
 | Cross-origin unlinkability | ✓ | Different `origin_id` → different token |
-| Within-origin linkability | Configurable | Client controls via `presentation_index` |
+| Within-origin linkability | Configurable | Client controls via `identity_index` |
 | Payment-credential timing | Partial | Credential issued with payment response |
 
 **Timing correlation mitigation (RECOMMENDED):**
@@ -862,7 +877,6 @@ An implementation conforms to this specification if it:
 7. Returns correct error codes per §14
 8. Supports at least one registered suite
 9. Computes `origin_id` per §10
-10. Outputs `expires_at` from circuit per §11
 
 ---
 
@@ -873,8 +887,7 @@ Credential {
   // Signed by issuer (facilitator)
   service_id: Field
   tier: Field  
-  presentation_budget: Field
-  issued_at: Field
+  identity_limit: Field
   expires_at: Field
   commitment: (Field, Field)  // Point
   signature: (Point, Scalar)  // Schnorr (R, s)
@@ -912,7 +925,7 @@ Content-Type: application/json
   }],
   "extensions": {
     "zk_credential": {
-      "version": "0.2.0",
+      "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
       "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04..."
     }
@@ -959,8 +972,7 @@ Content-Type: application/json
       "kid": "key-2026-02",
       "service_id": "0xabc123...",
       "tier": 1,
-      "presentation_budget": 1000,
-      "issued_at": 1706918400,
+      "identity_limit": 1000,
       "expires_at": 1707004800,
       "commitment": "0x04<x><y>",
       "signature": "0x<R_x><R_y><s>"
@@ -980,14 +992,14 @@ Content-Type: application/json
 
 {
   "zk_credential": {
-    "version": "0.2.0",
+    "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
     "proof": "<base64-encoded-proof>",
+    "current_time": 1707004800,
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "expires_at": 1707004800
+      "tier": 1
     }
   }
 }
@@ -1019,53 +1031,9 @@ If credential redemption occurred in the same request as payment, the server wou
 - No additional trust assumptions
 - Credential issuance piggybacks on existing settlement response
 
-**`expires_at` as public output:**
-Allows server to verify credential freshness independently, without trusting client-provided `current_time`.
+**`expires_at` checked inside circuit:**
+The circuit checks `expires_at >= current_time` internally. This keeps `expires_at` private (not leaked as a public output) while still enforcing freshness: the client-provided `zk_credential.current_time` is a public input to the circuit, while `expires_at` remains private, and the server validates that this client-supplied time is within an acceptable drift of its own clock.
 
-**`presentation_budget` naming:**
-Clarifies semantic: maximum distinct presentations derivable, not "uses". Circuit enforces `presentation_index < presentation_budget`.
+**`identity_limit` naming:**
+Clarifies semantic: maximum distinct identities derivable, not "uses". Circuit enforces `identity_index < identity_limit`.
 
----
-
-## Appendix D: Migration from zk-session 0.1
-
-| v0.1 (zk-session) | v0.2 (zk-credential) |
-|-------------------|----------------------|
-| `zk_session` | `zk_credential` |
-| `max_presentations` | `presentation_budget` |
-| `schemes` | `credential_suites` |
-| `Authorization` header | Request body |
-| `PAYMENT-RESPONSE` header | Response body |
-| 2 public outputs | 3 public outputs (+ `expires_at`) |
-| `issuer_pubkey` (implementation naming) | `facilitator_pubkey` (spec) |
-
----
-
-## Changelog
-
-### 0.2.0 (2026-02-05)
-
-- Renamed `zk_session` → `zk_credential`
-- Renamed `max_presentations` → `presentation_budget`
-- Renamed `schemes` → `credential_suites`
-- Made body transport normative; removed header-based proof transport
-- Added `expires_at` as public circuit output
-- Added structured error envelope
-- Added key rotation mechanism with `kid` field
-- Added timing correlation attack mitigation guidance
-- Added `origin_id` canonicalization rules
-- Added `service_id` derivation specification (§10.4)
-- Added clock skew tolerance (±60s) (§11.1)
-- Added wire encoding specification for signatures/commitments (§13.2)
-- Clarified server derives public inputs; clients send only public outputs
-- Made Phase 1 resource data optional for maximum privacy
-- Updated verification flow with explicit `origin_id` computation step
-- Updated all examples for body transport
-- Added proof size limit guidance and `max_body_bytes` in error responses
-- Added `origin_mismatch` error code for URL binding issues (if detected)
-- Added credential expiry to proof cache invalidation rules
-- Clarified facilitator/issuer public key naming in migration notes
-
-### 0.1.0 (2026-02-04)
-
-- Initial draft

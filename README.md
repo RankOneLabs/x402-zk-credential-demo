@@ -2,9 +2,9 @@
 
 > ⚠️ **PROOF OF CONCEPT** - This is a demonstration project for educational and research purposes only. It is NOT production-ready and should NOT be used in any production environment. The cryptographic implementations have not been audited, and the security guarantees are not verified.
 
-**Compliant with [x402 zk-credential spec v0.2.0](./zk-credential-spec.md)**
+**Compliant with [x402 zk-credential spec v0.1.0](./zk-credential-spec.md)**
 
-Anonymous session credentials for x402 APIs using zero-knowledge proofs.
+Anonymous credentials for x402 APIs using zero-knowledge proofs.
 
 ## Overview
 
@@ -126,7 +126,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
 1. **Discovery:** Client requests protected resource → receives 402 with `extensions.zk_credential`
 2. **Settlement:** Client sends payment + commitment (body) → receives credential
-3. **Presentation:** Client POSTs proof in request body (`zk_credential` envelope)
+3. **Presentation:** Client presents ZK proof by POSTing it in the request body (`zk_credential` envelope)
 4. **Verification:** Server verifies ZK proof and applies rate limiting
 
 ### 402 Response Format (spec §7)
@@ -145,7 +145,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
   ],
   "extensions": {
     "zk_credential": {
-      "version": "0.2.0",
+      "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
       "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04..."
     }
@@ -153,19 +153,19 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 }
 ```
 
-### Proof Presentation Body (spec §6.3)
+### Proof Identity Body (spec §6.3)
 
 ```json
 {
   "zk_credential": {
-    "version": "0.2.0",
+    "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
     "kid": "key-2026-02",
     "proof": "<base64-proof>",
     "public_outputs": {
       "origin_token": "0x...",
       "tier": 1,
-      "expires_at": 1707004800
+      "current_time": 1707004800
     }
   }
 }
@@ -173,7 +173,7 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
 ## Privacy Budget
 
-Clients control the privacy/performance tradeoff via `presentation_index`:
+Clients control the privacy/performance tradeoff via `identity_index`:
 
 | Strategy | Privacy | Performance |
 |----------|---------|-------------|

@@ -72,7 +72,6 @@ describe('ZkVerifier', () => {
           '0x1', '0x2', '0x3', '0x4', '0x5',  // 5 public inputs
           '0xabc',  // origin_token
           '0x1',    // tier
-          '0x64',   // expires_at
         ],
       });
       
@@ -102,7 +101,7 @@ describe('ZkVerifier', () => {
       
       expect(result.valid).toBe(false);
       expect(result.error).toContain('Invalid publicInputs length');
-      expect(result.error).toContain('expected >= 8');
+      expect(result.error).toContain('expected >= 7');
       expect(result.error).toContain('got 3');
     });
 

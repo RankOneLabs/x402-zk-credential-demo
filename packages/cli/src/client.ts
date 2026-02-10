@@ -2,7 +2,7 @@
  * ZK Credential Client
  * 
  * Manages credentials and generates authenticated requests.
- * Compliant with x402 zk-credential spec v0.2.0
+ * Compliant with x402 zk-credential spec v0.1.0
  */
 
 import {
@@ -313,7 +313,6 @@ export class ZkCredentialClient {
       kid: wire.kid,
       tier: wire.tier,
       identityLimit: wire.identity_limit,
-      issuedAt: wire.issued_at,
       expiresAt: wire.expires_at,
       userCommitment: {
         x: bigIntToHex(commitmentX),
@@ -561,14 +560,13 @@ export class ZkCredentialClient {
     const body = JSON.stringify({
       ...baseBody,
       zk_credential: {
-        version: '0.2.0',
+        version: '0.1.0',
         suite: 'pedersen-schnorr-poseidon-ultrahonk',
         proof: proof.proof,
+        current_time: proof.currentTime,
         public_outputs: {
           origin_token: proof.originToken,
           tier: proof.tier,
-          expires_at: proof.expiresAt,
-          current_time: proof.currentTime,
         },
       },
     });
@@ -608,7 +606,6 @@ export class ZkCredentialClient {
       cred_service_id: fmt(credential.serviceId),
       cred_tier: fmt(credential.tier),
       cred_identity_limit: fmt(credential.identityLimit),
-      cred_issued_at: fmt(credential.issuedAt),
       cred_expires_at: fmt(credential.expiresAt),
       cred_commitment_x: fmt(credential.userCommitment.x),
       cred_commitment_y: fmt(credential.userCommitment.y),
@@ -636,10 +633,9 @@ export class ZkCredentialClient {
       console.log(`[Client] Proof size: ${proof.length} bytes, ${publicInputs.length} public inputs`);
 
       // Extract outputs from public inputs
-      // Layout: [service_id, current_time, origin_id, facilitator_pubkey_x, facilitator_pubkey_y, origin_token, tier, expires_at]
+      // Layout: [service_id, current_time, origin_id, facilitator_pubkey_x, facilitator_pubkey_y, origin_token, tier]
       const originToken = publicInputs[5];
       const tier = publicInputs[6];
-      const expiresAt = publicInputs[7];
 
       const proofB64 = Buffer.from(proof).toString('base64');
 
@@ -647,8 +643,8 @@ export class ZkCredentialClient {
         proof: proofB64,
         originToken: originToken,
         tier: Number(hexToBigInt(tier)),
-        expiresAt: Number(hexToBigInt(expiresAt ?? '0x0')),
         currentTime: Number(currentTime),
+        cachedUntil: Math.min(credential.expiresAt, Number(currentTime) + 60),
         meta: {
           serviceId: credential.serviceId,
           originId: originId.toString(),
