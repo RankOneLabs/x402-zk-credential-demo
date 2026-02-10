@@ -22,10 +22,10 @@ import {
   type PaymentRequirements,
   type ZKCredentialKey,
   type ZKCredentialKeysResponse,
+  bytesToPoint,
   toBase64Url,
   fromBase64Url,
   pointToBytes,
-  bytesToPoint,
   fieldToBytes,
   bytesToField,
 } from '@demo/crypto';
@@ -485,12 +485,13 @@ export class ZkCredentialClient {
       if (keys) {
         const key = keys.find((k: ZKCredentialKey) => k.kid === credential.kid);
         if (key) {
-          // Convert base64url keys to hex StoredCredential format
-          const xBytes = fromBase64Url(key.x);
-          const yBytes = fromBase64Url(key.y);
+          // Parse suite-prefixed pubkey (spec §18.2)
+          const { value: pubkeyB64 } = parseSchemePrefix(key.pubkey);
+          const pubkeyBytes = fromBase64Url(pubkeyB64);
+          const pubkeyPoint = bytesToPoint(pubkeyBytes);
           facilitatorPubkey = {
-            x: bigIntToHex(bytesToField(xBytes)),
-            y: bigIntToHex(bytesToField(yBytes))
+            x: bigIntToHex(pubkeyPoint.x),
+            y: bigIntToHex(pubkeyPoint.y)
           };
         }
       }

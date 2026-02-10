@@ -240,17 +240,16 @@ export function addSchemePrefix(scheme: ZKCredentialSuite, value: string): strin
 }
 
 // =============================================================================
-// Key Discovery Types (spec §11)
+// Key Discovery Types (spec §18.2)
 // =============================================================================
 
-/** JWK-like key format for ZK keys */
+/** Key format per spec §18.2 */
 export interface ZKCredentialKey {
   kid: string;
-  alg: ZKCredentialSuite;
-  kty: 'ZK';
-  crv: 'BN254';
-  x: string; // base64url
-  y: string; // base64url
+  suite: ZKCredentialSuite;
+  pubkey: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:<base64url(04||x||y)>"
+  valid_from: number; // Unix timestamp
+  valid_until: number | null; // Unix timestamp or null if current
 }
 
 /** Response from /.well-known/zk-credential-keys */

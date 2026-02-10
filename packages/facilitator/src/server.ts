@@ -53,22 +53,19 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
     }
   });
 
-  // Well-known keys endpoint (spec §11)
+  // Well-known keys endpoint (spec §18.2)
   app.get('/.well-known/zk-credential-keys', async (_req, res, next) => {
     try {
-      const pubKey = await facilitator.getPublicKey();
-      const xB64 = toBase64Url(Buffer.from(pubKey.x.toString(16).padStart(64, '0'), 'hex'));
-      const yB64 = toBase64Url(Buffer.from(pubKey.y.toString(16).padStart(64, '0'), 'hex'));
+      const pubkeyPrefixed = await facilitator.getPublicKeyPrefixed();
 
       res.json({
         keys: [
           {
             kid: config.kid ?? '1',
-            alg: 'pedersen-schnorr-poseidon-ultrahonk',
-            kty: 'ZK',
-            crv: 'BN254',
-            x: xB64,
-            y: yB64,
+            suite: 'pedersen-schnorr-poseidon-ultrahonk',
+            pubkey: pubkeyPrefixed,
+            valid_from: Math.floor(Date.now() / 1000),
+            valid_until: null,
           }
         ]
       });

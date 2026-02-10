@@ -178,16 +178,16 @@ describe('End-to-End Flow', () => {
         };
         console.log('Facilitator pubkey:', facilitatorPubkey);
 
-        // Verify /.well-known/zk-credential-keys
+        // Verify /.well-known/zk-credential-keys (spec §18.2 format)
         const wkResponse = await fetch(`http://localhost:${FACILITATOR_PORT}/.well-known/zk-credential-keys`);
         expect(wkResponse.status).toBe(200);
         const wkData = await wkResponse.json() as any;
         expect(wkData.keys).toBeDefined();
         expect(wkData.keys[0].kid).toBe('e2e-test-key');
-
-        // Verify JWK x/y are base64url encoded matching the pubkey
-        const expectedXB64 = toBase64Url(fieldToBytes(pubkeyPoint.x));
-        expect(wkData.keys[0].x).toBe(expectedXB64);
+        expect(wkData.keys[0].suite).toBe('pedersen-schnorr-poseidon-ultrahonk');
+        expect(wkData.keys[0].pubkey).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:[A-Za-z0-9_-]+$/);
+        expect(wkData.keys[0].valid_from).toBeTypeOf('number');
+        expect(wkData.keys[0].valid_until).toBeNull();
 
         // 2. Start API
         console.log('Starting API Server...');
