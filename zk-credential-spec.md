@@ -123,8 +123,8 @@ This is an **intentional deviation** from the "one request after payment" patter
 3. **Servers MAY accept a header-carried proof as an optimization, but MUST SUPPORT body transport for conformance.** 
 4. **Any header-carried proof is an optional, non-normative optimization.**
 5. **If any header is used, it MUST be metadata-only (e.g., `suite`, `kid`) and MUST NOT be required.**
-5. **Credentials MUST be returned in the response body**, not headers.
-6. **Large artifacts MUST be in the body**; headers are for routing/signaling only.
+6. **Credentials MUST be returned in the response body**, not headers.
+7. **Large artifacts MUST be in the body**; headers are for routing/signaling only.
 
 ### 6.2 Content Types and Encoding
 
