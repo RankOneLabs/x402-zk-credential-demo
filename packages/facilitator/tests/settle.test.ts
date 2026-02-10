@@ -378,7 +378,7 @@ describe('CredentialIssuer.settle()', () => {
   });
 
   describe('credential structure', () => {
-    it('should include correct service_id as hex', async () => {
+    it('should include correct service_id as base64url', async () => {
       const issuer = createIssuer({ serviceId: 42n });
       const request = createSettlementRequest();
 

@@ -283,7 +283,7 @@ export class ZkCredentialMiddleware {
             );
           }
 
-          // Validate extensions.zk_credential.credential
+          // Validate extensions.zk-credential.credential
           if (!response.extensions || typeof response.extensions !== 'object') {
             throw new PaymentError(
               'server_error',
@@ -390,7 +390,7 @@ export class ZkCredentialMiddleware {
   }
 
   /**
-   * Parse zk_credential envelope from request body (spec §6.3)
+   * Parse zk-credential envelope from request body (spec §6.3)
    */
   private parseProofEnvelope(req: Request): {
     suite: string;
@@ -472,7 +472,7 @@ export class ZkCredentialMiddleware {
    * Verify a request's ZK credential (spec §15)
    * 
    * Verification flow:
-   * 1. Parse request body for zk_credential
+   * 1. Parse request body for zk-credential
    * 2. If missing → credential_missing
    * 3. Check suite support
    * 4. Construct public inputs: (service_id, current_time, origin_id, facilitator_pubkey)

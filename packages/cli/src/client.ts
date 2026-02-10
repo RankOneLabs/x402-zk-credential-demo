@@ -84,7 +84,7 @@ const DEFAULT_CONFIG: ClientConfig = {
   enableProofCache: true,
 };
 
-/** Parsed 402 response with zk_credential extension */
+/** Parsed 402 response with zk-credential extension */
 export interface Parsed402Response {
   facilitatorUrl: string;
   facilitatorPubkey: { x: string; y: string };
@@ -157,7 +157,7 @@ export class ZkCredentialClient {
   }
 
   /**
-   * Discover zk_credential requirements by making a request to a protected endpoint
+   * Discover zk-credential requirements by making a request to a protected endpoint
    * and parsing the 402 response (spec §5.2, step 1-2)
    */
   async discover(url: string): Promise<Parsed402Response> {
@@ -422,7 +422,7 @@ export class ZkCredentialClient {
   }
 
   /**
-   * Make an authenticated request using zk_credential body presentation (spec §6.3)
+   * Make an authenticated request using zk-credential body presentation (spec §6.3)
    * 
    * If the request receives a 402 response, this method will NOT automatically
    * handle payment - the caller must obtain a credential first.

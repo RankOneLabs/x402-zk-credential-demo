@@ -67,7 +67,7 @@ function createMockResponse(): Partial<Response> & {
 
 /**
  * Create valid ZK credential body for testing
- * Uses zk_credential presentation format (spec §6.3)
+ * Uses zk-credential presentation format (spec §6.3)
  */
 function createValidBody(
   originToken: string,
@@ -115,7 +115,7 @@ describe('ZkCredentialMiddleware', () => {
   });
 
   describe('verifyRequest - body validation', () => {
-    it('should reject when zk_credential body is missing', async () => {
+    it('should reject when zk-credential body is missing', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const req = createMockRequest({});
 
@@ -363,7 +363,7 @@ describe('ZkCredentialMiddleware', () => {
         }
       };
       const req = createMockRequest({});
-      req.body = body; // Explicitly set body — createMockRequest only auto-detects zk_credential bodies
+      req.body = body; // Explicitly set body — createMockRequest only auto-detects zk-credential bodies
       const res = createMockResponse();
       const next = vi.fn();
 

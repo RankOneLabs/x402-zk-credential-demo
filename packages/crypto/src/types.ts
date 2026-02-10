@@ -2,7 +2,7 @@
  * Common types for cryptographic operations
  * Compliant with x402 zk-credential spec v0.1.0
  * 
- * Uses @x402/core types for payment layer, extends with zk_credential types.
+ * Uses @x402/core types for payment layer, extends with zk-credential types.
  */
 
 // Re-export x402 core types for convenience
@@ -88,7 +88,7 @@ export interface ProofOutputs {
 // x402 Protocol Types with ZK Credential Extension (spec §6-9, §14)
 // =============================================================================
 
-/** zk_credential extension in 402 response (spec §7) */
+/** zk-credential extension in 402 response (spec §7) */
 export interface ZKCredentialExtension {
   version: '0.1.0';
   credential_suites: ZKCredentialSuite[];
@@ -98,7 +98,7 @@ export interface ZKCredentialExtension {
 }
 
 /**
- * Extended x402 PaymentRequired with zk_credential extension
+ * Extended x402 PaymentRequired with zk-credential extension
  * This is what the API returns for 402 Payment Required responses.
  */
 export interface X402WithZKCredentialResponse extends PaymentRequired {
@@ -130,7 +130,7 @@ export interface X402PaymentRequirements {
   facilitator: string;
 }
 
-/** Payment request to facilitator with zk_credential commitment (spec §8.3) */
+/** Payment request to facilitator with zk-credential commitment (spec §8.3) */
 export interface X402PaymentRequest {
   x402Version: 2;
   payment: unknown; // x402 payment proof (opaque to zk-credential layer)

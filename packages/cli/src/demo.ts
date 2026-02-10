@@ -2,7 +2,7 @@
  * Demo: Make a real USDC payment and obtain credential
  * 
  * This script demonstrates the full x402 zk-credential payment flow:
- * 1. Discovery: Fetch 402 response with zk_credential extension
+ * 1. Discovery: Fetch 402 response with zk-credential extension
  * 2. Payment: Create EIP-3009 signed authorization via x402Client
  * 3. Settlement: Submit payment to facilitator and obtain credential
  * 4. Access: Make authenticated requests with ZK proofs
@@ -30,7 +30,7 @@ async function main() {
   console.log('━━━ PHASE 1: Discovery (402 Response) ━━━\n');
 
   console.log(`Requesting protected resource: ${API_URL}/api/whoami`);
-  console.log('Expected: 402 Payment Required with zk_credential extension\n');
+  console.log('Expected: 402 Payment Required with zk-credential extension\n');
 
   const discoveryResponse = await fetch(`${API_URL}/api/whoami`);
 

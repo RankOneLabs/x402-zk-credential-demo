@@ -4,7 +4,7 @@ import { createApiServer, type ApiServerConfig } from '../src/server.js';
 
 /**
  * Helper to create valid ZK credential body
- * Uses the zk_credential presentation format (spec §6.3)
+ * Uses the zk-credential presentation format (spec §6.3)
  * Uses skip mode so proof content doesn't matter
  */
 function createZkBody(originToken: string, tier: number) {
