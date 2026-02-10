@@ -120,15 +120,21 @@ This is an **intentional deviation** from the "one request after payment" patter
 
 1. **Proofs MUST be carried in the HTTP request body**, not headers.
 2. **Servers MUST NOT require proofs in headers.**
-3. **Credentials MUST be returned in the response body**, not headers.
-4. **Large artifacts MUST be in the body**; headers are for routing/signaling only.
+3. **Servers MAY accept a header-carried proof as an optimization, but MUST support body transport for conformance.**
+4. **If any header is used, it MUST be metadata-only (e.g., `suite`, `kid`) and MUST NOT be required.**
+5. **Credentials MUST be returned in the response body**, not headers.
+6. **Large artifacts MUST be in the body**; headers are for routing/signaling only.
 
-### 6.2 Content Types
+### 6.2 Content Types and Encoding
 
 | Content-Type | Status | Notes |
 |--------------|--------|-------|
-| `application/json` | REQUIRED | Base64-encoded binary fields |
-| `application/cbor` | OPTIONAL | More efficient for binary data |
+| `application/json` | REQUIRED | Base64url-encoded binary fields (no padding) |
+| `application/cbor` | OPTIONAL | Raw byte strings for binary data |
+
+**Encoding Rules:**
+- **Binary fields:** Must be **base64url without padding** (RFC 4648). Applies to `proof`, `signature`, `pubkey`, `commitment`, `origin_token`, `service_id`.
+- **Timestamps:** Must be Unix time in seconds (integer).
 
 ### 6.3 Request Envelope (Proof Identity)
 
@@ -205,7 +211,7 @@ The client must transmit `current_time` because the proof is bound to the exact 
 
 ### 6.6 HTTP Method for Redemption
 
-Since proofs are in the request body, credential redemption uses **POST**:
+Since proofs are in the request body, credential redemption **SHOULD** use **POST**. `GET`-with-body is not required and may be unsupported by intermediaries.
 
 ```
 POST /api/resource HTTP/1.1
@@ -568,7 +574,7 @@ Cached proofs become invalid when:
 
 ## 13. Credential Suite Registry
 
-A credential suite defines the complete cryptographic stack. Suite identifiers are opaque labels mapping to specifications.
+A credential suite defines the complete cryptographic stack. Suite identifiers are opaque labels mapping to specifications. A suite fully specifies the proving system (SNARK/STARK), verifier algorithm/parameters, signature scheme, and hash functions.
 
 | Suite ID | Commitment | Signature | Hash | Proof System | Curve |
 |----------|------------|-----------|------|--------------|-------|
@@ -767,6 +773,14 @@ Server steps for requests without `zk_credential`:
 | DoS via verification | Rate limiting, proof size limits |
 | Cross-server replay | `origin_id` includes host |
 
+### 17.2 Denial of Service (DoS) Guidance
+
+Verification is computationally expensive. Servers SHOULD perform cheap pre-checks before verification:
+- Enforce `Content-Length` limits (e.g., 64KB).
+- Validate `current_time` skew (±60s).
+- Check `suite` support (fast fail on unsupported suites).
+- Apply rate limits based on IP or other factors before parsing the proof.
+
 ### 17.1 Timing Correlation Attack
 
 **Attack:** Issuers can link wallet addresses to commitments via timing — credentials are issued immediately after payment.
@@ -789,7 +803,10 @@ Server steps for requests without `zk_credential`:
 
 ### 18.2 Key Discovery
 
-Servers SHOULD expose issuer keys at:
+Servers SHOULD expose issuer public keys via HTTP at `GET /.well-known/zk-credential-keys` for discovery and rotation.
+Clients MUST NOT depend on discovery; keys may also be provisioned out-of-band.
+
+Endpoint:
 ```
 GET /.well-known/zk-credential-keys
 ```
