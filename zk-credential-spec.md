@@ -308,7 +308,7 @@ Server calls facilitator's `/settle` endpoint:
 
 ```json
 {
-  "paymentPayload": { /* from request */ },
+  "payment": { /* from request */ },
   "paymentRequirements": { /* from server config */ },
   "extensions": {
     "zk-credential": {
@@ -324,10 +324,11 @@ Facilitator returns credential in settlement response body:
 
 ```json
 {
-  "success": true,
-  "transaction": "0x...",
-  "network": "eip155:8453",
-  "payer": "0x...",
+  "payment_receipt": {
+    "status": "settled",
+    "txHash": "0x...",
+    "network": "eip155:8453"
+  },
   "extensions": {
     "zk-credential": {
       "credential": {
@@ -967,8 +968,18 @@ Content-Type: application/json
   }
 }
 
-# 4-5. Server → Facilitator: /settle (with commitment)
-#      Facilitator returns settlement + credential
+# 4. Server → Facilitator: POST /settle
+#    {
+#      "payment": { ... },
+#      "paymentRequirements": { ... },
+#      "extensions": { "zk-credential": { "commitment": "..." } }
+#    }
+
+# 5. Facilitator → Server:
+#    {
+#      "payment_receipt": { "status": "settled", "txHash": "0x..." },
+#      "extensions": { "zk-credential": { "credential": { ... } } }
+#    }
 
 # 6. Server returns resource + credential (in body)
 HTTP/1.1 200 OK
