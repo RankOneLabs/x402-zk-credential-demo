@@ -189,6 +189,7 @@ The client must transmit `current_time` because the proof is bound to the exact 
   "zk-credential": {
     "credential": {
       "suite": "pedersen-schnorr-poseidon-ultrahonk",
+      "kid": "key-2026-02",
       "service_id": "<base64url-service-id>",
       "tier": 1,
       "identity_limit": 1000,
@@ -251,7 +252,8 @@ When returning `402 Payment Required`, servers supporting zk-credential include 
       "version": "0.1.0",
       "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
       "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:<base64url-pubkey>",
-      "max_credential_ttl": 86400
+      "max_credential_ttl": 86400,
+      "content_types": ["application/json", "application/cbor"]
     }
   }
 }
@@ -263,6 +265,7 @@ When returning `402 Payment Required`, servers supporting zk-credential include 
 | `credential_suites` | Supported cryptographic suites (see §13) |
 | `facilitator_pubkey` | Suite-prefixed issuer public key for credential verification (facilitator acts as issuer) |
 | `max_credential_ttl` | Optional. Maximum credential lifetime in seconds |
+| `content_types` | Optional. Advertised supported content types (e.g., `["application/json"]`) |
 
 Clients that don't support zk-credential ignore `extensions.zk-credential` and use standard x402.
 
@@ -333,6 +336,7 @@ Facilitator returns credential in settlement response body:
     "zk-credential": {
       "credential": {
         "suite": "pedersen-schnorr-poseidon-ultrahonk",
+        "kid": "key-2026-02",
         "service_id": "<base64url-service-id>",
         "tier": 1,
         "identity_limit": 1000,
@@ -369,15 +373,16 @@ Server returns credential in response body (not header):
 
 ### 8.6 Credential Fields
 
-| Field | Description |
-|-------|-------------|
-| `suite` | Cryptographic suite used |
-| `service_id` | Identifies the service/API |
-| `tier` | Access level (0, 1, 2, ...) — derived from payment amount |
-| `identity_limit` | Maximum distinct identities derivable from credential |
-| `expires_at` | Unix timestamp of expiration |
-| `commitment` | Client's commitment (echoed back) |
-| `signature` | Facilitator signature over all fields |
+| Field | Required | Description |
+|-------|----------|-------------|
+| `suite` | Yes | Cryptographic suite used |
+| `kid` | No | Key ID identifying which issuer key signed this credential (for key rotation, see §18) |
+| `service_id` | Yes | Identifies the service/API |
+| `tier` | Yes | Access level (0, 1, 2, ...) — derived from payment amount |
+| `identity_limit` | Yes | Maximum distinct identities derivable from credential |
+| `expires_at` | Yes | Unix timestamp of expiration |
+| `commitment` | Yes | Client's commitment (echoed back) |
+| `signature` | Yes | Facilitator signature over all fields |
 
 **Facilitator MUST NOT** store or log commitment-to-payment mappings beyond immediate operational needs.
 
@@ -818,14 +823,14 @@ Response:
     {
       "kid": "key-2026-02",
       "suite": "pedersen-schnorr-poseidon-ultrahonk",
-      "pubkey": "0x04...",
+      "pubkey": "pedersen-schnorr-poseidon-ultrahonk:<base64url(04||x||y)>",
       "valid_from": 1706918400,
       "valid_until": null
     },
     {
       "kid": "key-2026-01",
       "suite": "pedersen-schnorr-poseidon-ultrahonk",
-      "pubkey": "0x04...",
+      "pubkey": "pedersen-schnorr-poseidon-ultrahonk:<base64url(04||x||y)>",
       "valid_from": 1704240000,
       "valid_until": 1707004800
     }
@@ -997,12 +1002,12 @@ Content-Type: application/json
     "credential": {
       "suite": "pedersen-schnorr-poseidon-ultrahonk",
       "kid": "key-2026-02",
-      "service_id": "0xabc123...",
+      "service_id": "<base64url-service-id>",
       "tier": 1,
       "identity_limit": 1000,
       "expires_at": 1707004800,
-      "commitment": "0x04<x><y>",
-      "signature": "0x<R_x><R_y><s>"
+      "commitment": "pedersen-schnorr-poseidon-ultrahonk:<base64url(04||x||y)>",
+      "signature": "<base64url(R_x||R_y||s)>"
     }
   },
   "data": "first response (optional)"
