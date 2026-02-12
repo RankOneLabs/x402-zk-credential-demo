@@ -20,8 +20,6 @@ import {
   type CredentialWireFormat,
   type PaymentPayload,
   type PaymentRequirements,
-  type ZKCredentialKey,
-  type ZKCredentialKeysResponse,
   bytesToPoint,
   toBase64Url,
   fromBase64Url,
@@ -86,8 +84,11 @@ const DEFAULT_CONFIG: ClientConfig = {
 
 /** Parsed 402 response with zk-credential extension */
 export interface Parsed402Response {
-  facilitatorUrl: string;
-  facilitatorPubkey: { x: string; y: string };
+  issuerUrl: string;
+  issuerPubkey: { x: string; y: string };
+  issuerPubkeyB64: string;
+  issuerSuite: string;
+  serviceId: string;
   paymentAmount: string;
   paymentAsset: string;
   credentialSuites: string[];
@@ -99,10 +100,8 @@ export class ZkCredentialClient {
   private readonly proofCache: ProofCache;
   private readonly originIndices: Map<string, number> = new Map();
 
-  // Cache facilitator pubkey from 402 response
-  private facilitatorPubkeyCache: Map<string, { x: string; y: string }> = new Map();
-  // Cache well-known keys
-  private knownKeys: Map<string, ZKCredentialKey[]> = new Map();
+  // Cache issuer pubkey from 402 response
+  private issuerPubkeyCache: Map<string, { x: string; y: string; b64: string }> = new Map();
 
   constructor(config: Partial<ClientConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -121,6 +120,10 @@ export class ZkCredentialClient {
     }
 
     const zkCredential = body.extensions['zk-credential'];
+    if (!zkCredential.info) {
+      throw new Error('Response does not contain zk-credential.info');
+    }
+    const info = zkCredential.info;
 
     // Get first payment option from accepts array
     if (!body.accepts || body.accepts.length === 0) {
@@ -128,31 +131,29 @@ export class ZkCredentialClient {
     }
     const payment = body.accepts[0];
 
-    // Parse scheme-prefixed facilitator pubkey (base64url)
-    const { scheme, value: pubkeyB64 } = parseSchemePrefix(zkCredential.facilitator_pubkey);
-    if (scheme !== 'pedersen-schnorr-poseidon-ultrahonk') {
-      throw new Error(`Unsupported suite: ${scheme}`);
-    }
+    const pubkeyB64 = info.issuer_pubkey;
 
     // Decode base64url to bytes (0x04 + x + y)
     const pubkeyBytes = fromBase64Url(pubkeyB64);
     if (pubkeyBytes[0] !== 0x04 || pubkeyBytes.length !== 65) {
-      throw new Error('Invalid facilitator pubkey format: expected 65 bytes starting with 0x04');
+      throw new Error('Invalid issuer pubkey format: expected 65 bytes starting with 0x04');
     }
 
     const pubkeyPoint = bytesToPoint(pubkeyBytes);
     const pubkeyX = bigIntToHex(pubkeyPoint.x);
     const pubkeyY = bigIntToHex(pubkeyPoint.y);
 
-    // Get facilitator URL from extension (spec §6) or fall back to payTo
-    const facilitatorUrl = zkCredential.facilitator_url || payment.payTo;
+    const issuerUrl = payment.payTo;
 
     return {
-      facilitatorUrl,
-      facilitatorPubkey: { x: pubkeyX, y: pubkeyY },
+      issuerUrl,
+      issuerPubkey: { x: pubkeyX, y: pubkeyY },
+      issuerPubkeyB64: pubkeyB64,
+      issuerSuite: info.issuer_suite,
+      serviceId: info.service_id,
       paymentAmount: payment.amount,
       paymentAsset: payment.asset,
-      credentialSuites: zkCredential.credential_suites,
+      credentialSuites: info.credential_suites,
     };
   }
 
@@ -170,33 +171,14 @@ export class ZkCredentialClient {
     const body = await response.json() as X402WithZKCredentialResponse;
     const parsed = this.parse402Response(body);
 
-    // Cache the facilitator pubkey for later use
-    this.facilitatorPubkeyCache.set(parsed.facilitatorUrl, parsed.facilitatorPubkey);
+    // Cache the issuer pubkey for later use
+    this.issuerPubkeyCache.set(parsed.issuerUrl, { ...parsed.issuerPubkey, b64: parsed.issuerPubkeyB64 });
 
     return parsed;
   }
 
-  /**
-   * Fetch keys from /.well-known/zk-credential-keys (spec §11)
-   */
-  async fetchWellKnownKeys(baseUrl: string): Promise<ZKCredentialKey[]> {
-    try {
-      const url = new URL('/.well-known/zk-credential-keys', baseUrl).toString();
-      const response = await fetch(url);
-      if (!response.ok) return [];
-
-      const data = await response.json() as ZKCredentialKeysResponse;
-      return data.keys || [];
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * Get cached facilitator pubkey
-   */
-  getCachedFacilitatorPubkey(facilitatorUrl: string): { x: string; y: string } | undefined {
-    return this.facilitatorPubkeyCache.get(facilitatorUrl);
+  getCachedIssuerPubkey(issuerUrl: string): { x: string; y: string; b64: string } | undefined {
+    return this.issuerPubkeyCache.get(issuerUrl);
   }
 
   /**
@@ -248,7 +230,7 @@ export class ZkCredentialClient {
   async handlePaymentResponse(
     response: X402PaymentResponse,
     secrets: { nullifierSeed: bigint; blindingFactor: bigint },
-    facilitatorUrl: string
+    issuerUrl: string
   ): Promise<StoredCredential> {
     if (!response.extensions?.['zk-credential']?.credential) {
       throw new Error('Payment response missing zk-credential credential');
@@ -276,7 +258,7 @@ export class ZkCredentialClient {
       credential,
       secrets.nullifierSeed,
       secrets.blindingFactor,
-      facilitatorUrl
+      issuerUrl
     );
 
     this.storage.set(stored);
@@ -292,7 +274,7 @@ export class ZkCredentialClient {
     wire: CredentialWireFormat,
     nullifierSeed: bigint,
     blindingFactor: bigint,
-    facilitatorUrl: string
+    issuerUrl: string
   ): StoredCredential {
     // Parse commitment point from suite-prefixed base64url
     const { value: commitmentB64 } = parseSchemePrefix(wire.commitment);
@@ -302,8 +284,9 @@ export class ZkCredentialClient {
     const commitmentX = commitmentPoint.x;
     const commitmentY = commitmentPoint.y;
 
-    // Parse signature (base64url -> 96 bytes: r.x + r.y + s)
-    const sigBytes = fromBase64Url(wire.signature);
+    // Parse suite-typed signature: <suite>:<base64url>
+    const { value: sigB64 } = parseSchemePrefix(wire.signature);
+    const sigBytes = fromBase64Url(sigB64);
     if (sigBytes.length !== 96) {
       throw new Error(`Invalid signature length: expected 96 bytes, got ${sigBytes.length}`);
     }
@@ -313,7 +296,6 @@ export class ZkCredentialClient {
 
     return {
       serviceId: wire.service_id,
-      kid: wire.kid,
       tier: wire.tier,
       identityLimit: wire.identity_limit,
       expiresAt: wire.expires_at,
@@ -325,32 +307,25 @@ export class ZkCredentialClient {
         r: { x: sigRX, y: sigRY },
         s: sigS,
       },
-      // Facilitator pubkey is obtained from 402 response, not stored here
-      // The client must get it from the 402 response each time
-      facilitatorPubkey: { x: '0x0', y: '0x0' }, // Placeholder - updated when making requests
+      issuerPubkey: { x: '0x0', y: '0x0' }, // Populated from discovery
       nullifierSeed: bigIntToHex(nullifierSeed),
       blindingFactor: bigIntToHex(blindingFactor),
       identityCount: 0,
       obtainedAt: Date.now(),
-      facilitatorUrl: facilitatorUrl,
+      issuerUrl,
     };
   }
 
   /**
-   * Settle payment and obtain credential using x402 v2 signed payload (spec §7.2, §7.3)
+   * Settle payment and obtain credential using x402 v2 signed payload
+    * Uses standard settlement body extensions for commitment and credential.
    * 
-   * This method:
-   * 1. Generates secrets and commitment locally
-   * 2. Creates EIP-3009 signed payment authorization
-   * 3. Sends to facilitator for settlement
-   * 4. Stores and returns the credential
-   * 
-   * @param facilitatorUrl - URL of the facilitator's /settle endpoint
+    * @param issuerUrl - URL of the issuer/facilitator /settle endpoint
    * @param paymentPayload - x402 v2 PaymentPayload with signed EIP-3009 authorization
    * @param paymentRequirements - Payment requirements from the 402 response
    */
   async settleAndObtainCredential(
-    facilitatorUrl: string,
+    issuerUrl: string,
     paymentPayload: PaymentPayload,
     paymentRequirements: PaymentRequirements
   ): Promise<StoredCredential> {
@@ -360,12 +335,13 @@ export class ZkCredentialClient {
 
     // Compute commitment
     const commitment = await pedersenCommit(nullifierSeed, blindingFactor);
+
     const commitmentBytes = pointToBytes(commitment.point);
     const commitmentB64 = toBase64Url(commitmentBytes);
     const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', commitmentB64);
 
-    // Build x402 v2 settlement request
-    const request: SettlementRequest = {
+    // Build settlement request body with standard extension commitment
+    const request = {
       payment: paymentPayload,
       paymentRequirements,
       extensions: {
@@ -375,10 +351,11 @@ export class ZkCredentialClient {
       },
     };
 
-    // Send to facilitator
-    const response = await fetch(facilitatorUrl, {
+    const response = await fetch(issuerUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(request),
     });
 
@@ -387,10 +364,8 @@ export class ZkCredentialClient {
       throw new Error(`Settlement failed: ${error.error || response.statusText}`);
     }
 
-    const data = await response.json() as SettlementResponse;
-
-    // Extract credential from response
-    const credential = data.extensions?.['zk-credential']?.credential;
+    const settlement = await response.json() as SettlementResponse;
+    const credential = settlement.extensions?.['zk-credential']?.credential;
     if (!credential) {
       throw new Error('Settlement response missing extensions.zk-credential.credential');
     }
@@ -398,7 +373,8 @@ export class ZkCredentialClient {
     // Verify the returned commitment matches what we sent
     // This prevents a malicious facilitator from issuing credentials with wrong commitments
     const { value: returnedCommitmentB64 } = parseSchemePrefix(credential.commitment);
-    const expectedCommitmentB64 = commitmentB64;
+    const expectedCommitmentBytes = pointToBytes(commitment.point);
+    const expectedCommitmentB64 = toBase64Url(expectedCommitmentBytes);
 
     if (returnedCommitmentB64 !== expectedCommitmentB64) {
       throw new Error(
@@ -412,7 +388,7 @@ export class ZkCredentialClient {
       credential,
       nullifierSeed,
       blindingFactor,
-      facilitatorUrl
+      issuerUrl
     );
 
     this.storage.set(stored);
@@ -422,16 +398,14 @@ export class ZkCredentialClient {
   }
 
   /**
-   * Make an authenticated request using zk-credential body presentation (spec §6.3)
-   * 
-   * If the request receives a 402 response, this method will NOT automatically
-   * handle payment - the caller must obtain a credential first.
+   * Make an authenticated request using x402_zk_credential body envelope.
    */
   async makeAuthenticatedRequest(
     url: string,
     options: RequestInit & {
       forceUnlinkable?: boolean;
-      facilitatorPubkey?: { x: string; y: string };  // Required for proof generation
+      issuerPubkey?: { x: string; y: string };  // Required for proof generation
+      issuerPubkeyB64?: string;
     } = {}
   ): Promise<Response> {
     const urlObj = new URL(url);
@@ -440,13 +414,9 @@ export class ZkCredentialClient {
     const port = urlObj.port;
     const defaultPort = scheme === 'https' ? '443' : scheme === 'http' ? '80' : '';
     const host = port && port !== defaultPort ? `${hostname}:${port}` : hostname;
-    let pathname = urlObj.pathname;
-    if (pathname.endsWith('/') && pathname.length > 1) {
-      pathname = pathname.slice(0, -1);
-    }
+    const pathname = urlObj.pathname || '/';
     const canonicalOrigin = `${scheme}://${host}${pathname}`;
-    const originField = stringToField(canonicalOrigin);
-    const originId = poseidonHash3(originField, 0n, 0n);
+    const originId = stringToField(canonicalOrigin);
 
     // Find credential for this service
     // For demo, use the first available credential
@@ -463,55 +433,27 @@ export class ZkCredentialClient {
       throw new Error('Credential expired. Obtain a new one.');
     }
 
-    // Ensure we have facilitator pubkey
-    let facilitatorPubkey = options.facilitatorPubkey;
+    let issuerPubkey = options.issuerPubkey;
+    let issuerPubkeyB64 = options.issuerPubkeyB64;
 
-    // 1. Try to use kid if present in credential to find the correct key
-    if (!facilitatorPubkey && credential.kid) {
-      // Check cache first or fetch
-      let keys = this.knownKeys.get(credential.facilitatorUrl);
-      if (!keys) {
-        try {
-          keys = await this.fetchWellKnownKeys(credential.facilitatorUrl);
-          // Only cache non-empty key lists to allow retries on transient failures
-          if (keys.length > 0) {
-            this.knownKeys.set(credential.facilitatorUrl, keys);
-          }
-        } catch (e) {
-          console.warn('[Client] Failed to fetch well-known keys:', e);
-        }
-      }
-
-      if (keys) {
-        const key = keys.find((k: ZKCredentialKey) => k.kid === credential.kid);
-        if (key) {
-          // Parse suite-prefixed pubkey (spec §18.2)
-          const { value: pubkeyB64 } = parseSchemePrefix(key.pubkey);
-          const pubkeyBytes = fromBase64Url(pubkeyB64);
-          const pubkeyPoint = bytesToPoint(pubkeyBytes);
-          facilitatorPubkey = {
-            x: bigIntToHex(pubkeyPoint.x),
-            y: bigIntToHex(pubkeyPoint.y)
-          };
-        }
+    if (!issuerPubkey || !issuerPubkeyB64) {
+      const cached = this.issuerPubkeyCache.get(credential.issuerUrl);
+      if (cached) {
+        issuerPubkey = { x: cached.x, y: cached.y };
+        issuerPubkeyB64 = cached.b64;
       }
     }
 
-    // 2. Fallback to stored key in credential
-    if (!facilitatorPubkey) {
-      if (credential.facilitatorPubkey && credential.facilitatorPubkey.x !== '0x0') {
-        facilitatorPubkey = credential.facilitatorPubkey;
-      }
+    if (!issuerPubkey && credential.issuerPubkey && credential.issuerPubkey.x !== '0x0') {
+      issuerPubkey = credential.issuerPubkey;
+      issuerPubkeyB64 = toBase64Url(pointToBytes({ x: hexToBigInt(issuerPubkey.x), y: hexToBigInt(issuerPubkey.y) }));
     }
 
-    if (!facilitatorPubkey) {
-      throw new Error(
-        'Facilitator public key not available. Provide it via options.facilitatorPubkey or ensure credential has valid key/kid'
-      );
+    if (!issuerPubkey || !issuerPubkeyB64) {
+      throw new Error('Issuer public key not available. Call discover() first or provide options.issuerPubkey and options.issuerPubkeyB64');
     }
 
-    // Persist the resolved facilitator pubkey so future requests don't need options.facilitatorPubkey
-    credential.facilitatorPubkey = facilitatorPubkey;
+    credential.issuerPubkey = issuerPubkey;
     // Select presentation index based on strategy
     const { index, timeBucket } = this.selectIdentityIndex(
       credential,
@@ -552,25 +494,26 @@ export class ZkCredentialClient {
 
     const headers = new Headers(options.headers);
     headers.set('Content-Type', 'application/json');
-
-    let baseBody: Record<string, unknown> = {};
+    // Extract original application payload from options.body
+    let appPayload: unknown = null;
     if (options.body) {
       if (typeof options.body === 'string') {
         try {
-          baseBody = JSON.parse(options.body) as Record<string, unknown>;
+          appPayload = JSON.parse(options.body);
         } catch {
           throw new Error('makeAuthenticatedRequest only supports JSON string bodies');
         }
       } else if (typeof options.body === 'object') {
-        baseBody = options.body as unknown as Record<string, unknown>;
+        appPayload = options.body;
       }
     }
 
+    // Build body envelope: { x402_zk_credential, payload }
     const body = JSON.stringify({
-      ...baseBody,
-      'zk-credential': {
+      x402_zk_credential: {
         version: '0.1.0',
         suite: 'pedersen-schnorr-poseidon-ultrahonk',
+        issuer_pubkey: issuerPubkeyB64,
         proof: proof.proof,
         current_time: proof.currentTime,
         public_outputs: {
@@ -578,6 +521,7 @@ export class ZkCredentialClient {
           tier: proof.tier,
         },
       },
+      payload: appPayload,
     });
 
     return fetch(url, { ...options, method: options.method ?? 'POST', headers, body });
@@ -609,8 +553,8 @@ export class ZkCredentialClient {
       service_id: fmt(bytesToField(fromBase64Url(credential.serviceId))),
       current_time: fmt(currentTime),
       origin_id: fmt(originId),
-      facilitator_pubkey_x: fmt(credential.facilitatorPubkey.x),
-      facilitator_pubkey_y: fmt(credential.facilitatorPubkey.y),
+      facilitator_pubkey_x: fmt(credential.issuerPubkey.x),
+      facilitator_pubkey_y: fmt(credential.issuerPubkey.y),
 
       // Private inputs
       cred_service_id: fmt(bytesToField(fromBase64Url(credential.serviceId))),

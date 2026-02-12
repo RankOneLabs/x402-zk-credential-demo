@@ -20,44 +20,32 @@ import type { Request, Response, NextFunction } from 'express';
 import {
   stringToField,
   bigIntToHex,
-  addSchemePrefix,
-  poseidonHash3,
   type Point,
   type X402WithZKCredentialResponse,
   type ZKCredentialErrorResponse,
   type ZKCredentialErrorCode,
   ERROR_CODE_TO_STATUS,
-  toBase64Url,
   fromBase64Url,
+  toBase64Url,
   pointToBytes,
+  bytesToPoint,
+  fieldToBytes,
 } from '@demo/crypto';
 import { RateLimiter, type RateLimitConfig } from './ratelimit.js';
 import { ZkVerifier } from './verifier.js';
 
-class PaymentError extends Error {
-  public readonly httpStatus: number;
-  constructor(
-    public readonly code: ZKCredentialErrorCode,
-    message: string
-  ) {
-    super(message);
-    this.name = 'PaymentError';
-    this.httpStatus = ERROR_CODE_TO_STATUS[code];
-  }
-}
-
 export interface ZkCredentialConfig {
   /** Service ID this server accepts credentials for */
   serviceId: bigint;
-  /** Facilitator's public key for verifying credentials (spec §9.2) */
-  facilitatorPubkey: Point;
+  /** Issuer public key for verifying credentials */
+  issuerPubkey: Point;
   /** Rate limiting configuration */
   rateLimit: RateLimitConfig;
   /** Minimum tier required (default: 0) */
   minTier?: number;
   /** Skip proof verification (for development) */
   skipProofVerification?: boolean;
-  /** Facilitator URL for settlement (spec §6) */
+  /** Facilitator URL for settlement */
   facilitatorUrl: string;
   /** Payment amount in smallest unit (e.g., "100000" for 0.10 USDC) */
   paymentAmount?: string;
@@ -114,10 +102,9 @@ export class ZkCredentialMiddleware {
   /**
    * Get suite-prefixed public key for 402 response
    */
-  private getFacilitatorPubkeyPrefixed(): string {
-    const pubKeyBytes = pointToBytes(this.config.facilitatorPubkey);
-    const pubKeyB64 = toBase64Url(pubKeyBytes);
-    return addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', pubKeyB64);
+  private getIssuerPubkeyBase64(): string {
+    const pubKeyBytes = pointToBytes(this.config.issuerPubkey);
+    return toBase64Url(pubKeyBytes);
   }
 
   /**
@@ -163,10 +150,24 @@ export class ZkCredentialMiddleware {
       ],
       extensions: {
         'zk-credential': {
-          version: '0.1.0',
-          credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
-          facilitator_pubkey: this.getFacilitatorPubkeyPrefixed(),
-          facilitator_url: this.config.facilitatorUrl,
+          info: {
+            version: '0.1.0',
+            credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
+            issuer_suite: 'pedersen-schnorr-poseidon-ultrahonk',
+            issuer_pubkey: this.getIssuerPubkeyBase64(),
+            max_credential_ttl: 86400,
+            service_id: toBase64Url(fieldToBytes(this.config.serviceId)),
+          },
+          schema: {
+            $schema: 'https://json-schema.org/draft/2020-12/schema',
+            type: 'object',
+            properties: {
+              commitment: {
+                type: 'string',
+                description: "Suite-typed commitment: '<suite>:<base64url(point)>'",
+              },
+            },
+          },
         },
       },
     };
@@ -191,177 +192,24 @@ export class ZkCredentialMiddleware {
   }
 
   /**
-   * Express middleware for ZK credential verification (spec §11)
+   * Express middleware for ZK credential verification
+   * 
+   * Transport layer:
+   * - Phase 2 (Presentation): proof in body envelope { x402_zk_credential, payload }
    */
   middleware() {
     return async (req: Request, res: Response, next: NextFunction) => {
-      // 0. Handle Payment Settlement (Mediated Flow)
-      const paymentBody = req.body as Record<string, unknown> | undefined;
-      const payment = (paymentBody as { payment?: unknown } | undefined)?.payment;
-      const zkCredential = (paymentBody as { extensions?: { 'zk-credential'?: { commitment?: string } } } | undefined)
-        ?.extensions?.['zk-credential'];
-      if (payment) {
-        try {
-          console.log('[ZkCredential] Processing payment body...');
-
-          if (!paymentBody || typeof paymentBody !== 'object') {
-            throw new PaymentError('invalid_proof', 'Missing payment body');
-          }
-
-          if (!zkCredential?.commitment) {
-            throw new PaymentError(
-              'invalid_proof',
-              'Missing extensions.zk-credential.commitment per spec §8.2'
-            );
-          }
-
-          // Call Facilitator /settle
-          // Reuse buildPaymentRequirements() to ensure consistency with 402 response
-          const settleReq = {
-            payment,
-            paymentRequirements: this.buildPaymentRequirements(),
-            extensions: {
-              'zk-credential': {
-                commitment: zkCredential.commitment,
-              },
-            },
-          };
-
-          let settleResp: globalThis.Response;
-          try {
-            settleResp = await fetch(this.config.facilitatorUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(settleReq),
-            });
-          } catch (fetchError) {
-            throw new PaymentError(
-              'service_unavailable',
-              'Payment facilitator is temporarily unavailable. Please retry.'
-            );
-          }
-
-          if (!settleResp.ok) {
-            const errBody = await settleResp.text();
-            if (settleResp.status >= 400 && settleResp.status < 500) {
-              throw new PaymentError(
-                'tier_insufficient',
-                `Payment rejected by facilitator: ${errBody}`
-              );
-            } else {
-              throw new PaymentError(
-                'service_unavailable',
-                'Payment facilitator is temporarily unavailable. Please retry.'
-              );
-            }
-          }
-
-          const settleData: unknown = await settleResp.json();
-
-          // Validate settlement response structure (SettlementResponse from facilitator/types.ts)
-          if (!settleData || typeof settleData !== 'object') {
-            throw new PaymentError(
-              'server_error',
-              'Payment facilitator returned an invalid response'
-            );
-          }
-
-          const response = settleData as Record<string, unknown>;
-
-          // Validate payment_receipt
-          if (!response.payment_receipt || typeof response.payment_receipt !== 'object') {
-            throw new PaymentError(
-              'server_error',
-              'Settlement response missing payment_receipt'
-            );
-          }
-          const receipt = response.payment_receipt as Record<string, unknown>;
-          if (receipt.status !== 'settled') {
-            throw new PaymentError(
-              'tier_insufficient',
-              `Settlement failed: status=${receipt.status}`
-            );
-          }
-
-          // Validate extensions.zk-credential.credential
-          if (!response.extensions || typeof response.extensions !== 'object') {
-            throw new PaymentError(
-              'server_error',
-              'Settlement response missing extensions'
-            );
-          }
-          const extensions = response.extensions as Record<string, unknown>;
-          if (!extensions['zk-credential'] || typeof extensions['zk-credential'] !== 'object') {
-            throw new PaymentError(
-              'server_error',
-              'Settlement response missing extensions.zk-credential'
-            );
-          }
-          const zkCredExt = extensions['zk-credential'] as Record<string, unknown>;
-          if (!zkCredExt.credential || typeof zkCredExt.credential !== 'object') {
-            throw new PaymentError(
-              'server_error',
-              'Settlement response missing extensions.zk-credential.credential'
-            );
-          }
-          const cred = zkCredExt.credential as Record<string, unknown>;
-
-          // Validate required credential fields
-          if (typeof cred.tier !== 'number') {
-            throw new PaymentError(
-              'server_error',
-              'Settlement response credential missing tier'
-            );
-          }
-
-          // Construct X402PaymentResponse
-          const clientResp = {
-            x402: {
-              payment_response: response.payment_receipt,
-            },
-            'zk-credential': {
-              credential: cred,
-            },
-          };
-
-          console.log('[ZkCredential] Payment settled, credential issued. Returning credential.');
-          res.status(200).json(clientResp);
-          return;
-
-        } catch (error) {
-          console.error('[ZkCredential] Payment processing failed:', error instanceof Error ? error.message : String(error));
-
-          if (error instanceof PaymentError) {
-            res.status(error.httpStatus).json({
-              error: error.code,
-              message: error.message,
-            });
-            return;
-          }
-
-          // Unknown error - return 500 to avoid silent failures
-          res.status(500).json({
-            error: 'server_error',
-            message: 'An unexpected error occurred processing payment',
-          });
-          return;
-        }
+      // Phase 2: Presentation — body envelope is canonical signal
+      if (!this.hasZkCredentialEnvelope(req.body)) {
+        const resourceUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+        res.status(402).json(this.build402Response(resourceUrl));
+        return;
       }
 
       const result = await this.verifyRequest(req);
 
       if (!result.valid) {
-        // 402: Payment Required when no credentials provided (spec §6)
-        // Prompts client to discover payment requirements and obtain credentials
-        const hasPresentation = !!(paymentBody && typeof paymentBody === 'object' && 'zk-credential' in paymentBody);
-        if (!hasPresentation) {
-          const resourceUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-          res.status(402).json(this.build402Response(resourceUrl));
-          return;
-        }
-
         const status = ERROR_CODE_TO_STATUS[result.errorCode];
-
         res.status(status).json(this.buildErrorResponse(result.errorCode, result.message));
         return;
       }
@@ -379,6 +227,12 @@ export class ZkCredentialMiddleware {
         return;
       }
 
+      // Unwrap payload from envelope into req.body for downstream handlers
+      const envelope = req.body as Record<string, unknown> | undefined;
+      if (envelope && typeof envelope === 'object' && 'payload' in envelope) {
+        req.body = envelope.payload ?? {};
+      }
+
       // Attach credential info to request
       req.zkCredential = {
         tier: result.tier,
@@ -389,29 +243,37 @@ export class ZkCredentialMiddleware {
     };
   }
 
+  private hasZkCredentialEnvelope(body: unknown): boolean {
+    if (!body || typeof body !== 'object') {
+      return false;
+    }
+    return 'x402_zk_credential' in (body as Record<string, unknown>);
+  }
+
   /**
-   * Parse zk-credential envelope from request body (spec §6.3)
+  * Parse ZK credential presentation envelope from request body.
+  * Reads from body.x402_zk_credential.
    */
   private parseProofEnvelope(req: Request): {
     suite: string;
-    kid?: string;
+    issuerPubkey: string;
     proofB64: string;
     currentTime: number;
     publicOutputs: { originToken: string; tier: number };
   } | null {
     const body = req.body as Record<string, unknown> | undefined;
-    const zkCredential = (body as { 'zk-credential'?: Record<string, unknown> } | undefined)?.['zk-credential'];
-    if (!zkCredential || typeof zkCredential !== 'object') {
+    const zkSession = (body as { x402_zk_credential?: Record<string, unknown> } | undefined)?.x402_zk_credential;
+    if (!zkSession || typeof zkSession !== 'object') {
       return null;
     }
 
-    const suite = zkCredential.suite;
-    const kid = zkCredential.kid;
-    const proofB64 = zkCredential.proof;
-    const currentTime = zkCredential.current_time;
-    const publicOutputs = zkCredential.public_outputs as Record<string, unknown> | undefined;
+    const suite = zkSession.suite;
+    const issuerPubkey = zkSession.issuer_pubkey;
+    const proofB64 = zkSession.proof;
+    const currentTime = zkSession.current_time;
+    const publicOutputs = zkSession.public_outputs as Record<string, unknown> | undefined;
 
-    if (typeof suite !== 'string' || typeof proofB64 !== 'string' || !publicOutputs) {
+    if (typeof suite !== 'string' || typeof issuerPubkey !== 'string' || typeof proofB64 !== 'string' || !publicOutputs) {
       return null;
     }
 
@@ -422,7 +284,7 @@ export class ZkCredentialMiddleware {
       return null;
     }
     // current_time is required — the proof is bound to the exact value used during
-    // generation, so the server cannot substitute its own clock (§6.3, §11.1)
+    // generation, so the server cannot substitute its own clock
     if (typeof currentTime !== 'number') {
       return null;
     }
@@ -441,7 +303,7 @@ export class ZkCredentialMiddleware {
     }
     return {
       suite,
-      kid: typeof kid === 'string' ? kid : undefined,
+      issuerPubkey,
       proofB64,
       currentTime,
       publicOutputs: { originToken, tier },
@@ -475,7 +337,7 @@ export class ZkCredentialMiddleware {
    * 1. Parse request body for zk-credential
    * 2. If missing → credential_missing
    * 3. Check suite support
-   * 4. Construct public inputs: (service_id, current_time, origin_id, facilitator_pubkey)
+  * 4. Construct public inputs: (service_id, current_time, origin_id, issuer_pubkey)
    * 5. Verify proof
    * 6. Extract outputs: (origin_token, tier)
    * 7. Check tier meets endpoint requirement
@@ -491,6 +353,14 @@ export class ZkCredentialMiddleware {
     // Step 3: Check suite
     if (presentation.suite !== 'pedersen-schnorr-poseidon-ultrahonk') {
       return { valid: false, errorCode: 'unsupported_suite', message: `Unsupported suite: ${presentation.suite}` };
+    }
+
+    const issuerKey = this.decodeIssuerPubkey(presentation.issuerPubkey);
+    if (!issuerKey) {
+      return { valid: false, errorCode: 'invalid_proof', message: 'Invalid issuer_pubkey encoding' };
+    }
+    if (issuerKey.x !== this.config.issuerPubkey.x || issuerKey.y !== this.config.issuerPubkey.y) {
+      return { valid: false, errorCode: 'invalid_proof', message: 'Unauthorized issuer_pubkey for service_id' };
     }
 
     // Step 3.5: Strictly validate base64url proof encoding
@@ -529,8 +399,8 @@ export class ZkCredentialMiddleware {
       bigIntToHex(this.config.serviceId),
       bigIntToHex(proofTime),
       bigIntToHex(originId),
-      bigIntToHex(this.config.facilitatorPubkey.x),
-      bigIntToHex(this.config.facilitatorPubkey.y),
+      bigIntToHex(issuerKey.x),
+      bigIntToHex(issuerKey.y),
       presentation.publicOutputs.originToken,
       bigIntToHex(BigInt(presentation.publicOutputs.tier)),
     ];
@@ -564,12 +434,22 @@ export class ZkCredentialMiddleware {
     }
   }
 
+  private decodeIssuerPubkey(issuerPubkeyB64: string): Point | null {
+    try {
+      const bytes = fromBase64Url(issuerPubkeyB64);
+      return bytesToPoint(bytes);
+    } catch {
+      return null;
+    }
+  }
+
   /**
   * Compute origin_id for a request
-  * Spec normalization: poseidon(stringToField(scheme + "://" + host + path))
+  * Spec normalization: stringToField(canonical_origin)
   * - scheme/host lowercase
-  * - path preserves case, strips trailing slash
-  * - query excluded
+  * - include non-default port only
+  * - path from URL parser (empty -> /)
+  * - query/fragment excluded
    */
   private computeOriginId(req: Request): bigint {
     const url = new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
@@ -580,14 +460,9 @@ export class ZkCredentialMiddleware {
     const defaultPort = scheme === 'https' ? '443' : scheme === 'http' ? '80' : '';
     const host = port && port !== defaultPort ? `${hostname}:${port}` : hostname;
 
-    let pathname = url.pathname;
-    if (pathname.endsWith('/') && pathname.length > 1) {
-      pathname = pathname.slice(0, -1);
-    }
-
+    const pathname = url.pathname || '/';
     const canonicalOrigin = `${scheme}://${host}${pathname}`;
-    const originField = stringToField(canonicalOrigin);
-    return poseidonHash3(originField, 0n, 0n);
+    return stringToField(canonicalOrigin);
   }
 
   /**

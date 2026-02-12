@@ -22,7 +22,7 @@ This demo implements a ZK credential system that replaces x402's SIWx identity l
 └──────┬──────┘      └──────┬──────┘      └──────┬──────┘
        │                    │                    │
        │                    │◄───────────────────┤ 1. GET /resource
-      │                    │───────────────────►│ 2. 402 + zk_credential
+      │                    │───────────────────►│ 2. 402 + zk-credential
        │                    │                    │
        │                    │◄───────────────────┤ 3. Sign EIP-3009
        │◄───────────────────┤ (proxy settle)     │
@@ -124,9 +124,9 @@ npm run demo --workspace=@demo/cli
 
 The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
-1. **Discovery:** Client requests protected resource → receives 402 with `extensions.zk_credential`
+1. **Discovery:** Client requests protected resource → receives 402 with `extensions["zk-credential"]`
 2. **Settlement:** Client sends payment + commitment (body) → receives credential
-3. **Presentation:** Client presents ZK proof by POSTing it in the request body (`zk_credential` envelope)
+3. **Presentation:** Client presents ZK proof by POSTing it in the request body (`x402_zk_credential` envelope)
 4. **Verification:** Server verifies ZK proof and applies rate limiting
 
 ### 402 Response Format (spec §7)
@@ -144,10 +144,25 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
     }
   ],
   "extensions": {
-    "zk_credential": {
-      "version": "0.1.0",
-      "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
-      "facilitator_pubkey": "pedersen-schnorr-poseidon-ultrahonk:0x04..."
+    "zk-credential": {
+      "info": {
+        "version": "0.1.0",
+        "credential_suites": ["pedersen-schnorr-poseidon-ultrahonk"],
+        "issuer_suite": "pedersen-schnorr-poseidon-ultrahonk",
+        "issuer_pubkey": "BAAB...",
+        "max_credential_ttl": 86400,
+        "service_id": "k7VzM_xR9bQ2h1nPfEjw"
+      },
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "commitment": {
+            "type": "string",
+            "description": "Suite-typed commitment: '<suite>:<base64url(point)>'"
+          }
+        }
+      }
     }
   }
 }
@@ -157,15 +172,15 @@ The demo runs with **real payments on local Anvil** (forked from Base Sepolia):
 
 ```json
 {
-  "zk_credential": {
+  "x402_zk_credential": {
     "version": "0.1.0",
     "suite": "pedersen-schnorr-poseidon-ultrahonk",
-    "kid": "key-2026-02",
+    "issuer_pubkey": "BAAB...",
     "proof": "<base64-proof>",
+    "current_time": 1707004800,
     "public_outputs": {
       "origin_token": "0x...",
-      "tier": 1,
-      "current_time": 1707004800
+      "tier": 1
     }
   }
 }

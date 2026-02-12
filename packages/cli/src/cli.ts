@@ -45,7 +45,7 @@ credentialCmd
       console.log(`  Status: ${status?.status}`);
       console.log(`  Used: ${cred.identityCount}/${cred.identityLimit}`);
       console.log(`  Expires in: ${Math.round((status?.expiresIn ?? 0) / 60)} minutes`);
-      console.log(`  Issuer: ${cred.facilitatorUrl}`);
+      console.log(`  Issuer: ${cred.issuerUrl}`);
       console.log();
     }
   });

@@ -177,9 +177,7 @@ describe('CredentialIssuer.settle()', () => {
       expect(cred.identity_limit).toBe(10);
       expect(cred.expires_at).toBe(Math.floor(new Date('2026-01-15T12:00:00Z').getTime() / 1000) + 3600); // tier 1 duration
       expect(cred.commitment).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:[A-Za-z0-9_-]+$/);
-      // Signature is 96 bytes (64+64+64 ?? no, point is 64 bytes (32+32) + scalar 32 bytes = 96 bytes)
-      // 96 * 4 / 3 = 128 chars
-      expect(cred.signature).toMatch(/^[A-Za-z0-9_-]{128}$/);
+      expect(cred.signature).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:[A-Za-z0-9_-]+$/);
     });
 
     it('should assign higher tier for larger payment', async () => {
@@ -407,10 +405,9 @@ describe('CredentialIssuer.settle()', () => {
 
       const response = await issuer.settle(request);
 
-      // Signature should be 96 bytes encoded as Base64URL
+      // Signature should be suite-typed: <suite>:<base64url>
       const sig = response.extensions['zk-credential'].credential.signature;
-      expect(sig).toMatch(/^[A-Za-z0-9_-]{128}$/);
-      expect(sig.length).toBe(128);
+      expect(sig).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:[A-Za-z0-9_-]+$/);
     });
   });
 });

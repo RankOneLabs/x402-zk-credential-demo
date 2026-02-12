@@ -25,7 +25,12 @@ export function createApiServer(config: ApiServerConfig) {
   // Middleware
   app.use(cors({
     origin: config.corsOrigins ?? '*',
-    exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
+    exposedHeaders: [
+      'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset',
+    ],
+    allowedHeaders: [
+      'Content-Type', 'Authorization',
+    ],
   }));
   app.use(express.json({ limit: '64kb' }));
 
@@ -159,11 +164,11 @@ if (isMain) {
   const skipProofVerification = process.env.SKIP_PROOF_VERIFICATION === 'true'; // Default to false (real verification)
 
   // Facilitator public key is required in production mode (spec §4, §6)
-  const facilitatorPubkeyX = process.env.FACILITATOR_PUBKEY_X;
-  const facilitatorPubkeyY = process.env.FACILITATOR_PUBKEY_Y;
+  const issuerPubkeyX = process.env.ISSUER_PUBKEY_X;
+  const issuerPubkeyY = process.env.ISSUER_PUBKEY_Y;
 
-  if (!skipProofVerification && (!facilitatorPubkeyX || !facilitatorPubkeyY)) {
-    console.error('[API] Error: FACILITATOR_PUBKEY_X and FACILITATOR_PUBKEY_Y are required when proof verification is enabled.');
+  if (!skipProofVerification && (!issuerPubkeyX || !issuerPubkeyY)) {
+    console.error('[API] Error: ISSUER_PUBKEY_X and ISSUER_PUBKEY_Y are required when proof verification is enabled.');
     console.error('[API] Set SKIP_PROOF_VERIFICATION=true for development without real keys.');
     process.exit(1);
   }
@@ -172,18 +177,18 @@ if (isMain) {
   // Use valid BN254/Grumpkin point for dummy keys to avoid Noir crashes
   // Point: (1, 17631683881184975370165255887551781615748384631227002551410204835505589172088)
   // This is a valid Grumpkin point (x=1)
-  const pubkeyX = facilitatorPubkeyX ?? '0x0c24bf5f0365fe0876b48a7b1a4c6941d20aa8c59963b48fa2c937fcdd5ec836';
-  const pubkeyY = facilitatorPubkeyY ?? '0x1b5fa4c18138ad44ec555b48cd85155693b446f96e5a9a3a46076666946ba192';
+  const pubkeyX = issuerPubkeyX ?? '0x0c24bf5f0365fe0876b48a7b1a4c6941d20aa8c59963b48fa2c937fcdd5ec836';
+  const pubkeyY = issuerPubkeyY ?? '0x1b5fa4c18138ad44ec555b48cd85155693b446f96e5a9a3a46076666946ba192';
 
-  if (skipProofVerification && (!facilitatorPubkeyX || !facilitatorPubkeyY)) {
-    console.warn('[API] Warning: Using dummy facilitator public keys (proof verification is disabled)')
+  if (skipProofVerification && (!issuerPubkeyX || !issuerPubkeyY)) {
+    console.warn('[API] Warning: Using dummy issuer public keys (proof verification is disabled)');
   }
 
   const config: ApiServerConfig = {
     port: parseInt(process.env.PORT ?? '3002'),
     zkCredential: {
       serviceId: BigInt(process.env.SERVICE_ID ?? '1'),
-      facilitatorPubkey: {
+      issuerPubkey: {
         x: hexToBigInt(pubkeyX),
         y: hexToBigInt(pubkeyY),
       },

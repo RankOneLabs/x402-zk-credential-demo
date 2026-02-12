@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApiServer, type ApiServerConfig } from '../src/server.js';
+import { pointToBytes, toBase64Url } from '@demo/crypto';
 
 /**
- * Helper to create valid ZK credential body
- * Uses the zk-credential presentation format (spec §6.3)
- * Uses skip mode so proof content doesn't matter
+ * Helper to create valid ZK credential body envelope.
+ * Uses the x402_zk_credential presentation format.
+ * Uses skip mode so proof content doesn't matter.
  */
-function createZkBody(originToken: string, tier: number) {
+function createZkBody(originToken: string, tier: number, payload: unknown = null) {
   return {
-    'zk-credential': {
+    x402_zk_credential: {
       version: '0.1.0',
       suite: 'pedersen-schnorr-poseidon-ultrahonk',
+      issuer_pubkey: toBase64Url(pointToBytes({ x: 1n, y: 2n })),
       proof: Buffer.from([1, 2, 3, 4]).toString('base64url'),
       current_time: Math.floor(Date.now() / 1000),
       public_outputs: {
@@ -19,6 +21,7 @@ function createZkBody(originToken: string, tier: number) {
         tier,
       },
     },
+    payload,
   };
 }
 
@@ -27,7 +30,7 @@ describe('API Server', () => {
     port: 0, // Random port for testing
     zkCredential: {
       serviceId: 1n,
-      facilitatorPubkey: { x: 1n, y: 2n },
+      issuerPubkey: { x: 1n, y: 2n },
       rateLimit: {
         maxRequestsPerToken: 10,
         windowSeconds: 60,
@@ -79,17 +82,20 @@ describe('API Server', () => {
     it('should reject requests with unsupported suite', async () => {
       const { app } = createApiServer(config);
       const body = {
-        'zk-credential': {
+        x402_zk_credential: {
           version: '0.1.0',
           suite: 'unknown-scheme',
+          issuer_pubkey: toBase64Url(pointToBytes({ x: 1n, y: 2n })),
           proof: Buffer.from([1]).toString('base64url'),
           current_time: Math.floor(Date.now() / 1000),
           public_outputs: { origin_token: '0xabc', tier: 1 },
         },
+        payload: null,
       };
 
       const res = await request(app)
-        .get('/api/whoami')
+        .post('/api/whoami')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(400);
@@ -101,7 +107,8 @@ describe('API Server', () => {
       const body = createZkBody('0xabc123', 1);
 
       const res = await request(app)
-        .get('/api/whoami')
+        .post('/api/whoami')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -123,7 +130,8 @@ describe('API Server', () => {
       const body = createZkBody('0xabc123', 1);
 
       const res = await request(app)
-        .get('/api/whoami')
+        .post('/api/whoami')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(402);
@@ -142,7 +150,8 @@ describe('API Server', () => {
       const body = createZkBody('0xabc123', 1);
 
       const res = await request(app)
-        .get('/api/whoami')
+        .post('/api/whoami')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -155,7 +164,8 @@ describe('API Server', () => {
       const body = createZkBody('0xratelimit1', 1);
 
       const res = await request(app)
-        .get('/api/whoami')
+        .post('/api/whoami')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -169,15 +179,15 @@ describe('API Server', () => {
       const body = createZkBody('0xratelimit2', 1);
 
       // First request
-      const res1 = await request(app).get('/api/whoami').send(body);
+      const res1 = await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body);
       expect(res1.headers['x-ratelimit-remaining']).toBe('9');
 
       // Second request
-      const res2 = await request(app).get('/api/whoami').send(body);
+      const res2 = await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body);
       expect(res2.headers['x-ratelimit-remaining']).toBe('8');
 
       // Third request
-      const res3 = await request(app).get('/api/whoami').send(body);
+      const res3 = await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body);
       expect(res3.headers['x-ratelimit-remaining']).toBe('7');
     });
 
@@ -196,12 +206,12 @@ describe('API Server', () => {
       const body = createZkBody('0xratelimit3', 1);
 
       // Make requests up to limit
-      await request(app).get('/api/whoami').send(body);
-      await request(app).get('/api/whoami').send(body);
-      await request(app).get('/api/whoami').send(body);
+      await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body);
+      await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body);
+      await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body);
 
       // Fourth request should be rate limited
-      const res = await request(app).get('/api/whoami').send(body);
+      const res = await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body);
 
       expect(res.status).toBe(429);
       expect(res.body.error).toBe('rate_limited');
@@ -223,13 +233,13 @@ describe('API Server', () => {
       const body2 = createZkBody('0xuser2', 1);
 
       // User 1 hits limit
-      await request(app).get('/api/whoami').send(body1);
-      await request(app).get('/api/whoami').send(body1);
-      const res1 = await request(app).get('/api/whoami').send(body1);
+      await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body1);
+      await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body1);
+      const res1 = await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body1);
       expect(res1.status).toBe(429);
 
       // User 2 should still have quota
-      const res2 = await request(app).get('/api/whoami').send(body2);
+      const res2 = await request(app).post('/api/whoami').set('ZK-SESSION', '1').send(body2);
       expect(res2.status).toBe(200);
     });
   });
@@ -241,7 +251,8 @@ describe('API Server', () => {
       const body = createZkBody(longToken, 2);
 
       const res = await request(app)
-        .get('/api/whoami')
+        .post('/api/whoami')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -257,7 +268,8 @@ describe('API Server', () => {
       const body = createZkBody(shortToken, 1);
 
       const res = await request(app)
-        .get('/api/whoami')
+        .post('/api/whoami')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -268,11 +280,12 @@ describe('API Server', () => {
   describe('POST /api/chat', () => {
     it('should return tier-based response for tier 0', async () => {
       const { app } = createApiServer(config);
-      const body = createZkBody('0xchat0', 0);
+      const body = createZkBody('0xchat0', 0, { message: 'Hello' });
 
       const res = await request(app)
         .post('/api/chat')
-        .send({ ...body, message: 'Hello' });
+        .set('ZK-SESSION', '1')
+        .send(body);
 
       expect(res.status).toBe(200);
       expect(res.body.response).toBe('[Basic] Echo: Hello');
@@ -282,11 +295,12 @@ describe('API Server', () => {
 
     it('should return tier-based response for tier 1', async () => {
       const { app } = createApiServer(config);
-      const body = createZkBody('0xchat1', 1);
+      const body = createZkBody('0xchat1', 1, { message: 'Process this' });
 
       const res = await request(app)
         .post('/api/chat')
-        .send({ ...body, message: 'Process this' });
+        .set('ZK-SESSION', '1')
+        .send(body);
 
       expect(res.status).toBe(200);
       expect(res.body.response).toBe('[Pro] Processing: Process this');
@@ -295,11 +309,12 @@ describe('API Server', () => {
 
     it('should return tier-based response for tier 2', async () => {
       const { app } = createApiServer(config);
-      const body = createZkBody('0xchat2', 2);
+      const body = createZkBody('0xchat2', 2, { message: 'Priority request' });
 
       const res = await request(app)
         .post('/api/chat')
-        .send({ ...body, message: 'Priority request' });
+        .set('ZK-SESSION', '1')
+        .send(body);
 
       expect(res.status).toBe(200);
       expect(res.body.response).toBe('[Enterprise] Priority response to: Priority request');
@@ -313,7 +328,8 @@ describe('API Server', () => {
       const body = createZkBody('0xdata0', 0);
 
       const res = await request(app)
-        .get('/api/data')
+        .post('/api/data')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -325,7 +341,8 @@ describe('API Server', () => {
       const body = createZkBody('0xdata1', 1);
 
       const res = await request(app)
-        .get('/api/data')
+        .post('/api/data')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -337,7 +354,8 @@ describe('API Server', () => {
       const body = createZkBody('0xdata2', 2);
 
       const res = await request(app)
-        .get('/api/data')
+        .post('/api/data')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -351,7 +369,8 @@ describe('API Server', () => {
       const body = createZkBody('0xdata3', 3);
 
       const res = await request(app)
-        .get('/api/data')
+        .post('/api/data')
+        .set('ZK-SESSION', '1')
         .send(body);
 
       expect(res.status).toBe(200);
@@ -363,7 +382,10 @@ describe('API Server', () => {
     it('should return 402 for unknown routes (auth check first)', async () => {
       const { app } = createApiServer(config);
 
-      const res = await request(app).get('/api/unknown');
+      const res = await request(app)
+        .post('/api/unknown')
+        .set('ZK-SESSION', '1')
+        .send({});
 
       expect(res.status).toBe(402); // x402: Payment Required - auth check happens first on /api/*
     });
@@ -396,12 +418,29 @@ describe('API Server', () => {
       const res = await request(app)
         .options('/api/whoami')
         .set('Origin', 'http://example.com')
-        .set('Access-Control-Request-Method', 'GET');
+        .set('Access-Control-Request-Method', 'POST');
 
       const exposed = res.headers['access-control-expose-headers'] ?? '';
       expect(exposed).toContain('X-RateLimit-Limit');
       expect(exposed).toContain('X-RateLimit-Remaining');
       expect(exposed).toContain('X-RateLimit-Reset');
+    });
+
+    it('should not require custom ZK headers in CORS', async () => {
+      const { app } = createApiServer(config);
+
+      const res = await request(app)
+        .options('/api/whoami')
+        .set('Origin', 'http://example.com')
+        .set('Access-Control-Request-Method', 'POST');
+
+      const exposed = res.headers['access-control-expose-headers'] ?? '';
+      expect(exposed).not.toContain('ZK-SESSION-CREDENTIAL');
+      expect(exposed).not.toContain('ZK-SESSION-ACCEPTED');
+
+      const allowed = res.headers['access-control-allow-headers'] ?? '';
+      expect(allowed).toContain('Content-Type');
+      expect(allowed).not.toContain('ZK-SESSION');
     });
   });
 });

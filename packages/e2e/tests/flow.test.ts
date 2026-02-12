@@ -5,7 +5,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { createApiServer } from '../../api/src/server.js';
 import { ZkCredentialClient } from '../../cli/src/client.js';
 import { createFacilitatorServer } from '../../facilitator/src/server.js';
-import { hexToBigInt, parseSchemePrefix, type X402WithZKCredentialResponse, type PaymentPayload, type PaymentRequirements, fromBase64Url, bytesToPoint, bigIntToHex, toBase64Url, fieldToBytes } from '@demo/crypto';
+import { hexToBigInt, type X402WithZKCredentialResponse, type PaymentPayload, type PaymentRequirements, fromBase64Url, bytesToPoint, bigIntToHex } from '@demo/crypto';
 // Import x402 client libs for payment payload creation
 import { x402Client } from '@x402/core/client';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
@@ -143,7 +143,6 @@ describe('End-to-End Flow', () => {
             port: FACILITATOR_PORT,
             serviceId: 1001n,
             secretKey: 123456789n,
-            kid: 'e2e-test-key',
             tiers: [
                 { minAmountCents: 10, tier: 1, identityLimit: 10, durationSeconds: 3600 }
             ],
@@ -162,13 +161,13 @@ describe('End-to-End Flow', () => {
         // Fetch facilitator's public key from /info endpoint (new spec format)
         const infoResponse = await fetch(`http://localhost:${FACILITATOR_PORT}/info`);
         const infoData = await infoResponse.json() as {
-            facilitator_pubkey: string;
+            issuer_pubkey: string;
             service_id: string;
             credential_suites: string[];
         };
 
-        // Parse scheme-prefixed pubkey (base64url)
-        const { value: pubkeyB64 } = parseSchemePrefix(infoData.facilitator_pubkey);
+        // Parse issuer pubkey (base64url)
+        const pubkeyB64 = infoData.issuer_pubkey;
         const pubkeyBytes = fromBase64Url(pubkeyB64);
         const pubkeyPoint = bytesToPoint(pubkeyBytes);
 
@@ -178,24 +177,13 @@ describe('End-to-End Flow', () => {
         };
         console.log('Facilitator pubkey:', facilitatorPubkey);
 
-        // Verify /.well-known/zk-credential-keys (spec §18.2 format)
-        const wkResponse = await fetch(`http://localhost:${FACILITATOR_PORT}/.well-known/zk-credential-keys`);
-        expect(wkResponse.status).toBe(200);
-        const wkData = await wkResponse.json() as any;
-        expect(wkData.keys).toBeDefined();
-        expect(wkData.keys[0].kid).toBe('e2e-test-key');
-        expect(wkData.keys[0].suite).toBe('pedersen-schnorr-poseidon-ultrahonk');
-        expect(wkData.keys[0].pubkey).toMatch(/^pedersen-schnorr-poseidon-ultrahonk:[A-Za-z0-9_-]+$/);
-        expect(wkData.keys[0].valid_from).toBeTypeOf('number');
-        expect(wkData.keys[0].valid_until).toBeNull();
-
         // 2. Start API
         console.log('Starting API Server...');
         apiServer = createApiServer({
             port: API_PORT,
             zkCredential: {
                 serviceId: 1001n,
-                facilitatorPubkey: {
+                issuerPubkey: {
                     x: hexToBigInt(facilitatorPubkey.x),
                     y: hexToBigInt(facilitatorPubkey.y),
                 },
@@ -231,13 +219,13 @@ describe('End-to-End Flow', () => {
 
         // Verify zk-credential extension
         expect(discoveryData.extensions?.['zk-credential']).toBeDefined();
-        expect(discoveryData.extensions!['zk-credential']!.version).toBe('0.1.0');
-        expect(discoveryData.extensions!['zk-credential']!.credential_suites).toContain('pedersen-schnorr-poseidon-ultrahonk');
+        expect(discoveryData.extensions!['zk-credential']!.info.version).toBe('0.1.0');
+        expect(discoveryData.extensions!['zk-credential']!.info.credential_suites).toContain('pedersen-schnorr-poseidon-ultrahonk');
 
         // Parse facilitator URL and payment details from 402 response
-        const zkCredential = discoveryData.extensions!['zk-credential']!;
+        const zkCredential = discoveryData.extensions!['zk-credential']!.info;
         const paymentReqs = discoveryData.accepts[0];
-        const facilitatorUrl = zkCredential.facilitator_url || `http://localhost:${FACILITATOR_PORT}/settle`;
+        const facilitatorUrl = `http://localhost:${FACILITATOR_PORT}/settle`;
 
         // 1. Mint USDC to User
         const mintAbi = [{
@@ -329,15 +317,18 @@ describe('End-to-End Flow', () => {
         expect(storedCredential.tier).toBe(1);
         console.log('Credential obtained:', {
             serviceId: storedCredential.serviceId,
-            kid: storedCredential.kid,
             tier: storedCredential.tier,
         });
-        expect(storedCredential.kid).toBe('e2e-test-key');
 
         // 5. Access Protected API with zk-credential body presentation
         console.log('Accessing protected API with ZK proof...');
+        const issuerPubkeyB64 = zkCredential.issuer_pubkey;
         const response = await client.makeAuthenticatedRequest(
-            `http://localhost:${API_PORT}/api/whoami`
+            `http://localhost:${API_PORT}/api/whoami`,
+            {
+                issuerPubkey: facilitatorPubkey,
+                issuerPubkeyB64,
+            }
         );
 
         console.log('Response status:', response.status);
