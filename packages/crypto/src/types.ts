@@ -56,7 +56,6 @@ export type ZKCredentialSuite =
 export interface SignedCredential {
   suite: ZKCredentialSuite;
   service_id: string; // base64url-encoded
-  kid?: string;
   identityLimit: number;
   expiresAt: number;
   userCommitment: Point;
@@ -88,13 +87,32 @@ export interface ProofOutputs {
 // x402 Protocol Types with ZK Credential Extension (spec §6-9, §14)
 // =============================================================================
 
-/** zk-credential extension in 402 response (spec §7) */
-export interface ZKCredentialExtension {
+/** zk-credential extension info in 402 response (spec §7) */
+export interface ZKCredentialExtensionInfo {
   version: '0.1.0';
   credential_suites: ZKCredentialSuite[];
-  facilitator_pubkey: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:<base64url>"
-  facilitator_url?: string;   // URL to send settlement requests
+  issuer_suite: ZKCredentialSuite;
+  issuer_pubkey: string; // base64url raw pubkey bytes
   max_credential_ttl?: number;
+  service_id: string; // base64url(16 random bytes)
+}
+
+/** zk-credential extension schema in 402 response (spec §7) */
+export interface ZKCredentialExtensionSchema {
+  $schema: string;
+  type: 'object';
+  properties: {
+    commitment: {
+      type: 'string';
+      description: string;
+    };
+  };
+}
+
+/** zk-credential extension in 402 response (spec §7) */
+export interface ZKCredentialExtension {
+  info: ZKCredentialExtensionInfo;
+  schema: ZKCredentialExtensionSchema;
 }
 
 /**
@@ -144,13 +162,12 @@ export interface X402PaymentRequest {
 /** Credential in wire format (JSON-serializable) */
 export interface CredentialWireFormat {
   suite: ZKCredentialSuite;
-  kid: string;
   service_id: string;
   tier: number;
   identity_limit: number;
   expires_at: number;
   commitment: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:<base64url>"
-  signature: string;  // base64url-encoded
+  signature: string;  // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:<base64url>"
 }
 
 /** Payment response from facilitator (spec §8.4) */
@@ -165,36 +182,18 @@ export interface X402PaymentResponse {
 }
 
 // =============================================================================
-// ZK Session Transport Types (zk-session-transport-instructions)
+// Redemption Transport Types
 // =============================================================================
 
-/** Header names for the ZK Session transport layer */
-export const ZK_SESSION_HEADERS = {
-  /** Signal header: client sends "1" to indicate body contains ZK session envelope */
-  SIGNAL: 'ZK-SESSION',
-  /** Client → Server: base64(JSON) commitment during issuance */
-  COMMITMENT: 'ZK-SESSION-COMMITMENT',
-  /** Server → Client: base64(JSON) credential during issuance */
-  CREDENTIAL: 'ZK-SESSION-CREDENTIAL',
-  /** Server → Client: "1" to confirm ZK presentation was accepted */
-  ACCEPTED: 'ZK-SESSION-ACCEPTED',
-} as const;
-
-/** ZK-SESSION-COMMITMENT header value (decoded from base64 JSON) */
-export interface ZkSessionCommitmentHeader {
-  x: string;  // hex-encoded: "0x..."
-  y: string;  // hex-encoded: "0x..."
-}
-
 /**
- * Body envelope for presentation requests (signalled by ZK-SESSION: 1 header).
+ * Body envelope for presentation requests.
  * The proof is too large for headers (~15KB), so it goes in the body.
  */
-export interface ZkSessionPresentationEnvelope {
-  x402_zk_session: {
+export interface ZkCredentialPresentationEnvelope {
+  x402_zk_credential: {
     version: '0.1.0';
     suite: ZKCredentialSuite;
-    kid?: string;
+    issuer_pubkey: string; // base64url raw pubkey bytes
     proof: string;          // base64url
     current_time: number;
     public_outputs: {
@@ -213,9 +212,9 @@ export interface ZkSessionPresentationEnvelope {
 export type ZKCredentialErrorCode =
   | 'credential_missing'      // 402
   | 'tier_insufficient'       // 402
+  | 'unsupported_version'     // 400
   | 'unsupported_suite'       // 400
   | 'invalid_proof'           // 400
-  | 'origin_mismatch'         // 400
   | 'payload_too_large'       // 413
   | 'unsupported_media_type'  // 415
   | 'rate_limited'            // 429
@@ -243,9 +242,9 @@ export interface ZKCredentialError {
 export const ERROR_CODE_TO_STATUS: Record<ZKCredentialErrorCode, number> = {
   credential_missing: 402,
   tier_insufficient: 402,
+  unsupported_version: 400,
   unsupported_suite: 400,
   invalid_proof: 400,
-  origin_mismatch: 400,
   payload_too_large: 413,
   unsupported_media_type: 415,
   rate_limited: 429,
@@ -280,20 +279,4 @@ export function addSchemePrefix(scheme: ZKCredentialSuite, value: string): strin
   return `${scheme}:${value}`;
 }
 
-// =============================================================================
-// Key Discovery Types (spec §18.2)
-// =============================================================================
-
-/** Key format per spec §18.2 */
-export interface ZKCredentialKey {
-  kid: string;
-  suite: ZKCredentialSuite;
-  pubkey: string; // suite-prefixed: "pedersen-schnorr-poseidon-ultrahonk:<base64url(04||x||y)>"
-  valid_from: number; // Unix timestamp
-  valid_until: number | null; // Unix timestamp or null if current
-}
-
-/** Response from /.well-known/zk-credential-keys */
-export interface ZKCredentialKeysResponse {
-  keys: ZKCredentialKey[];
-}
+// Key discovery is out of scope for this extension.

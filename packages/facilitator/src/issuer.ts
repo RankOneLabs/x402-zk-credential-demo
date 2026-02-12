@@ -100,8 +100,6 @@ export interface IssuerConfig {
   serviceId: bigint;
   /** Issuer's secret key for signing ZK credentials */
   secretKey: bigint;
-  /** Key ID for the secret key (optional, defaults to '1') */
-  kid?: string;
   /** Pricing tiers (sorted by minAmountCents descending by the issuer) */
   tiers: TierConfig[];
   /** Enable mock payments for testing */
@@ -265,6 +263,7 @@ export class CredentialIssuer {
     sigBytes.set(fieldToBytes(signature.r.y), 32);
     sigBytes.set(fieldToBytes(signature.s), 64);
     const sigB64 = toBase64Url(sigBytes);
+    const sigPrefixed = addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', sigB64);
 
     const commitmentOutBytes = pointToBytes(userCommitment);
     const commitmentOutB64 = toBase64Url(commitmentOutBytes);
@@ -286,10 +285,9 @@ export class CredentialIssuer {
             service_id: toBase64Url(fieldToBytes(this.config.serviceId)),
             tier: tierConfig.tier,
             identity_limit: tierConfig.identityLimit,
-            kid: this.config.kid ?? '1',
             expires_at: expiresAt,
             commitment: commitmentOutPrefixed,
-            signature: sigB64,
+            signature: sigPrefixed,
           },
         },
       },

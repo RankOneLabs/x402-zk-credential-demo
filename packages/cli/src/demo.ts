@@ -10,7 +10,7 @@
  * Run with: npx tsx packages/cli/src/demo.ts
  */
 
-import { parseSchemePrefix, type PaymentRequirements, type PaymentPayload, fromBase64Url, bytesToPoint, bigIntToHex } from '@demo/crypto';
+import { type PaymentRequirements, type PaymentPayload, fromBase64Url, bytesToPoint, bigIntToHex } from '@demo/crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { x402Client } from '@x402/core/client';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
@@ -54,9 +54,9 @@ async function main() {
   }
 
   const paymentReqs = discoveryData.accepts[0];
-  const zkCredential = discoveryData.extensions['zk-credential'];
-  const facilitatorUrl = zkCredential.facilitator_url;
-  const facilitatorPubkeyString = zkCredential.facilitator_pubkey;
+  const zkCredentialInfo = discoveryData.extensions['zk-credential'].info;
+  const issuerUrl = paymentReqs.payTo;
+  const issuerPubkeyB64 = zkCredentialInfo.issuer_pubkey;
 
   console.log('✓ Received 402 response:\n');
   console.log('  Payment Requirements:');
@@ -66,9 +66,11 @@ async function main() {
   console.log(`    - asset: ${paymentReqs.asset}`);
   console.log(`    - payTo: ${paymentReqs.payTo}`);
   console.log('  ZK Credential Extension:');
-  console.log(`    - credential_suites: [${zkCredential.credential_suites.join(', ')}]`);
-  console.log(`    - facilitator_pubkey: ${facilitatorPubkeyString.slice(0, 40)}...`);
-  console.log(`    - facilitator_url: ${facilitatorUrl}\n`);
+  console.log(`    - credential_suites: [${zkCredentialInfo.credential_suites.join(', ')}]`);
+  console.log(`    - issuer_suite: ${zkCredentialInfo.issuer_suite}`);
+  console.log(`    - issuer_pubkey: ${issuerPubkeyB64.slice(0, 40)}...`);
+  console.log(`    - service_id: ${zkCredentialInfo.service_id}`);
+  console.log(`    - issuer_url: ${issuerUrl}\n`);
 
   // === PHASE 2: Payment & Settlement (spec §7) ===
   console.log('━━━ PHASE 2: Payment & Settlement ━━━\n');
@@ -119,7 +121,7 @@ async function main() {
   });
 
   const credential = await client.settleAndObtainCredential(
-    facilitatorUrl,
+    issuerUrl,
     paymentPayload,
     paymentRequirements
   );
@@ -134,12 +136,11 @@ async function main() {
   // === PHASE 3: Anonymous API Access ===
   console.log('━━━ PHASE 3: Anonymous API Access ━━━\n');
 
-  // Parse facilitator pubkey (base64url)
-  const parsedPubkeyB64 = parseSchemePrefix(facilitatorPubkeyString).value;
-  const pubkeyBytes = fromBase64Url(parsedPubkeyB64);
+  // Parse issuer pubkey (base64url)
+  const pubkeyBytes = fromBase64Url(issuerPubkeyB64);
   const pubkeyPoint = bytesToPoint(pubkeyBytes);
 
-  const facilitatorPubkey = {
+  const issuerPubkey = {
     x: bigIntToHex(pubkeyPoint.x),
     y: bigIntToHex(pubkeyPoint.y),
   };
@@ -149,7 +150,8 @@ async function main() {
   // Test /api/whoami
   console.log('1. GET /api/whoami');
   const whoamiResp = await client.makeAuthenticatedRequest(`${API_URL}/api/whoami`, {
-    facilitatorPubkey,
+    issuerPubkey,
+    issuerPubkeyB64,
   });
   const whoamiData = await whoamiResp.json() as any;
   console.log(`   Status: ${whoamiResp.status}`);
@@ -165,7 +167,8 @@ async function main() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg }),
-      facilitatorPubkey,
+      issuerPubkey,
+      issuerPubkeyB64,
     });
 
     const body = await response.json() as any;

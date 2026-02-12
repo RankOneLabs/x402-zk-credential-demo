@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import { createApiServer, type ApiServerConfig } from '../src/server.js';
+import { pointToBytes, toBase64Url } from '@demo/crypto';
 
 /**
- * Helper to create valid ZK session body envelope.
- * Uses the x402_zk_session presentation format.
+ * Helper to create valid ZK credential body envelope.
+ * Uses the x402_zk_credential presentation format.
  * Uses skip mode so proof content doesn't matter.
  */
 function createZkBody(originToken: string, tier: number, payload: unknown = null) {
   return {
-    x402_zk_session: {
+    x402_zk_credential: {
       version: '0.1.0',
       suite: 'pedersen-schnorr-poseidon-ultrahonk',
+      issuer_pubkey: toBase64Url(pointToBytes({ x: 1n, y: 2n })),
       proof: Buffer.from([1, 2, 3, 4]).toString('base64url'),
       current_time: Math.floor(Date.now() / 1000),
       public_outputs: {
@@ -28,7 +30,7 @@ describe('API Server', () => {
     port: 0, // Random port for testing
     zkCredential: {
       serviceId: 1n,
-      facilitatorPubkey: { x: 1n, y: 2n },
+      issuerPubkey: { x: 1n, y: 2n },
       rateLimit: {
         maxRequestsPerToken: 10,
         windowSeconds: 60,
@@ -80,9 +82,10 @@ describe('API Server', () => {
     it('should reject requests with unsupported suite', async () => {
       const { app } = createApiServer(config);
       const body = {
-        x402_zk_session: {
+        x402_zk_credential: {
           version: '0.1.0',
           suite: 'unknown-scheme',
+          issuer_pubkey: toBase64Url(pointToBytes({ x: 1n, y: 2n })),
           proof: Buffer.from([1]).toString('base64url'),
           current_time: Math.floor(Date.now() / 1000),
           public_outputs: { origin_token: '0xabc', tier: 1 },
@@ -423,7 +426,7 @@ describe('API Server', () => {
       expect(exposed).toContain('X-RateLimit-Reset');
     });
 
-    it('should expose ZK-SESSION transport headers in CORS', async () => {
+    it('should not require custom ZK headers in CORS', async () => {
       const { app } = createApiServer(config);
 
       const res = await request(app)
@@ -432,12 +435,12 @@ describe('API Server', () => {
         .set('Access-Control-Request-Method', 'POST');
 
       const exposed = res.headers['access-control-expose-headers'] ?? '';
-      expect(exposed).toContain('ZK-SESSION-CREDENTIAL');
-      expect(exposed).toContain('ZK-SESSION-ACCEPTED');
+      expect(exposed).not.toContain('ZK-SESSION-CREDENTIAL');
+      expect(exposed).not.toContain('ZK-SESSION-ACCEPTED');
 
       const allowed = res.headers['access-control-allow-headers'] ?? '';
-      expect(allowed).toContain('ZK-SESSION');
-      expect(allowed).toContain('ZK-SESSION-COMMITMENT');
+      expect(allowed).toContain('Content-Type');
+      expect(allowed).not.toContain('ZK-SESSION');
     });
   });
 });

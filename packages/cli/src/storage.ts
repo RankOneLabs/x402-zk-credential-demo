@@ -12,13 +12,12 @@ import type { Point, SchnorrSignature } from '@demo/crypto';
 export interface StoredCredential {
   // Credential from issuer
   serviceId: string;
-  kid?: string;
   tier: number;
   identityLimit: number;
   expiresAt: number;
   userCommitment: { x: string; y: string };
   signature: { r: { x: string; y: string }; s: string };
-  facilitatorPubkey: { x: string; y: string };
+  issuerPubkey: { x: string; y: string };
 
   // User secrets
   nullifierSeed: string;
@@ -27,7 +26,7 @@ export interface StoredCredential {
   // Tracking
   identityCount: number;
   obtainedAt: number;
-  facilitatorUrl: string;
+  issuerUrl: string;
 }
 
 export interface StorageData {
@@ -120,12 +119,12 @@ export class CredentialStorage {
   }
 
   /**
-   * Update facilitator pubkey for a credential
+   * Update issuer pubkey for a credential
    */
-  updateFacilitatorPubkey(serviceId: string, pubkey: { x: string; y: string }): void {
+  updateIssuerPubkey(serviceId: string, pubkey: { x: string; y: string }): void {
     const cred = this.data.credentials[serviceId];
     if (cred) {
-      cred.facilitatorPubkey = pubkey;
+      cred.issuerPubkey = pubkey;
       this.save();
     }
   }

@@ -37,9 +37,11 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
   app.get('/info', async (_req, res, next) => {
     try {
       const pubkeyPrefixed = await facilitator.getPublicKeyPrefixed();
+      const issuerPubkeyB64 = pubkeyPrefixed.split(':')[1] ?? pubkeyPrefixed;
       res.json({
         service_id: toBase64Url(fieldToBytes(config.serviceId)),
-        facilitator_pubkey: pubkeyPrefixed,
+        issuer_suite: 'pedersen-schnorr-poseidon-ultrahonk',
+        issuer_pubkey: issuerPubkeyB64,
         credential_suites: ['pedersen-schnorr-poseidon-ultrahonk'],
         tiers: config.tiers.map(t => ({
           tier: t.tier,
@@ -52,28 +54,6 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
       next(error);
     }
   });
-
-  // Well-known keys endpoint (spec §18.2)
-  app.get('/.well-known/zk-credential-keys', async (_req, res, next) => {
-    try {
-      const pubkeyPrefixed = await facilitator.getPublicKeyPrefixed();
-
-      res.json({
-        keys: [
-          {
-            kid: config.kid ?? '1',
-            suite: 'pedersen-schnorr-poseidon-ultrahonk',
-            pubkey: pubkeyPrefixed,
-            valid_from: Math.floor(Date.now() / 1000),
-            valid_until: null,
-          }
-        ]
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
   // Settlement endpoint (spec §8.3, §8.4)
   // x402 v2 format with signed payment payload
   app.post('/settle', async (req: Request, res: Response, next: NextFunction) => {

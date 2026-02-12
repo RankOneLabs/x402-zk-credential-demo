@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 import { ZkCredentialMiddleware, type ZkCredentialConfig } from '../src/middleware.js';
-import { bigIntToHex, stringToField } from '@demo/crypto';
+import { bigIntToHex, stringToField, pointToBytes, toBase64Url } from '@demo/crypto';
 
 // Skip ZK backend tests in CI — UltraHonk WASM takes >30s per test on GitHub Actions
 const describeZK = process.env.CI ? describe.skip : describe;
@@ -74,11 +74,13 @@ function createValidBody(
 ): Record<string, unknown> {
   const suite = (overrides.suite as string) ?? 'pedersen-schnorr-poseidon-ultrahonk';
   const currentTime = (overrides.currentTime as number) ?? Math.floor(Date.now() / 1000);
+  const issuerPubkey = (overrides.issuerPubkey as string) ?? toBase64Url(pointToBytes({ x: 1n, y: 2n }));
 
   return {
-    x402_zk_session: {
+    x402_zk_credential: {
       version: '0.1.0',
       suite,
+      issuer_pubkey: issuerPubkey,
       proof: Buffer.from([1, 2, 3, 4]).toString('base64url'),
       current_time: currentTime,
       public_outputs: {
@@ -90,7 +92,7 @@ function createValidBody(
   };
 }
 
-/** Create mock request with ZK-SESSION: 1 signal header and valid body */
+/** Create mock request with valid zk-credential body */
 function createAuthenticatedRequest(
   originToken: string,
   tier: number,
@@ -98,13 +100,13 @@ function createAuthenticatedRequest(
   overrides: Record<string, unknown> = {}
 ): Partial<Request> {
   const body = createValidBody(originToken, tier, overrides);
-  return createMockRequest(body, url, { 'zk-session': '1' });
+  return createMockRequest(body, url);
 }
 
 describe('ZkCredentialMiddleware', () => {
   const defaultConfig: ZkCredentialConfig = {
     serviceId: 1n,
-    facilitatorPubkey: { x: 1n, y: 2n },
+    issuerPubkey: { x: 1n, y: 2n },
     rateLimit: {
       maxRequestsPerToken: 100,
       windowSeconds: 60,
@@ -123,7 +125,7 @@ describe('ZkCredentialMiddleware', () => {
   });
 
   describe('verifyRequest - body validation', () => {
-    it('should reject when x402_zk_session body is missing', async () => {
+    it('should reject when x402_zk_credential body is missing', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const req = createMockRequest({});
 
@@ -136,9 +138,9 @@ describe('ZkCredentialMiddleware', () => {
       }
     });
 
-    it('should reject when x402_zk_session body has wrong format', async () => {
+    it('should reject when x402_zk_credential body has wrong format', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
-      const req = createMockRequest({ x402_zk_session: 'invalid' });
+      const req = createMockRequest({ x402_zk_credential: 'invalid' });
 
       const result = await middleware.verifyRequest(req as Request);
 
@@ -165,7 +167,7 @@ describe('ZkCredentialMiddleware', () => {
     it('should reject invalid proof format', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
-      (body.x402_zk_session as Record<string, unknown>).proof = '';
+      (body.x402_zk_credential as Record<string, unknown>).proof = '';
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -181,7 +183,7 @@ describe('ZkCredentialMiddleware', () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
       // Invalid characters like @ and # are not valid in base64
-      (body.x402_zk_session as Record<string, unknown>).proof = 'invalid@#chars';
+      (body.x402_zk_credential as Record<string, unknown>).proof = 'invalid@#chars';
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -197,7 +199,7 @@ describe('ZkCredentialMiddleware', () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
       // Spaces are not valid in strict base64
-      (body.x402_zk_session as Record<string, unknown>).proof = 'AQID BAU=';
+      (body.x402_zk_credential as Record<string, unknown>).proof = 'AQID BAU=';
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -212,7 +214,7 @@ describe('ZkCredentialMiddleware', () => {
     it('should reject base64 with incorrect padding', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
-      (body.x402_zk_session as Record<string, unknown>).proof = 'QQ='; // Should be 'QQ==' for proper padding
+      (body.x402_zk_credential as Record<string, unknown>).proof = 'QQ='; // Should be 'QQ==' for proper padding
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -227,7 +229,7 @@ describe('ZkCredentialMiddleware', () => {
     it('should accept valid base64 proof', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
       const body = createValidBody('0xabc', 1);
-      (body.x402_zk_session as Record<string, unknown>).proof = Buffer.from([1, 2, 3, 4]).toString('base64url');
+      (body.x402_zk_credential as Record<string, unknown>).proof = Buffer.from([1, 2, 3, 4]).toString('base64url');
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -281,7 +283,7 @@ describe('ZkCredentialMiddleware', () => {
     it('should default minTier to 0', async () => {
       const middleware = new ZkCredentialMiddleware({
         serviceId: 1n,
-        facilitatorPubkey: { x: 1n, y: 2n },
+        issuerPubkey: { x: 1n, y: 2n },
         rateLimit: { maxRequestsPerToken: 100, windowSeconds: 60 },
         skipProofVerification: true,
         facilitatorUrl: 'http://localhost:3001/settle',
@@ -319,7 +321,7 @@ describe('ZkCredentialMiddleware', () => {
         skipProofVerification: false,
       });
       const body = createValidBody('0xabc', 1);
-      (body.x402_zk_session as Record<string, unknown>).proof = '';
+      (body.x402_zk_credential as Record<string, unknown>).proof = '';
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -336,7 +338,7 @@ describe('ZkCredentialMiddleware', () => {
         skipProofVerification: false,
       });
       const body = createValidBody('0xabc', 1);
-      (body.x402_zk_session as Record<string, unknown>).proof = '';
+      (body.x402_zk_credential as Record<string, unknown>).proof = '';
       const req = createMockRequest(body);
 
       const result = await middleware.verifyRequest(req as Request);
@@ -348,31 +350,17 @@ describe('ZkCredentialMiddleware', () => {
     });
   });
 
-  describe('middleware - payment settlement', () => {
-    it('should return 503 when facilitator is unavailable', async () => {
+  describe('middleware - missing redemption envelope', () => {
+    it('should return 402 when x402_zk_credential is missing', async () => {
       const middleware = new ZkCredentialMiddleware(defaultConfig);
-
-      // Mock fetch to throw error
-      global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
-
-      // Payment body with ZK-SESSION-COMMITMENT header
-      const commitmentHeaderValue = Buffer.from(JSON.stringify({ x: '0x123', y: '0x456' })).toString('base64');
-      const body = {
-        payment: { some: 'payment' },
-      };
-      const req = createMockRequest(body, '/api/test', {
-        'zk-session-commitment': commitmentHeaderValue,
-      });
+      const req = createMockRequest({ payment: { some: 'payment' } }, '/api/test');
       const res = createMockResponse();
       const next = vi.fn();
 
       await middleware.middleware()(req as Request, res as Response, next);
 
-      expect(res.statusCode).toBe(503);
-      expect(res.jsonData).toEqual({
-        error: 'service_unavailable',
-        message: 'Payment facilitator is temporarily unavailable. Please retry.'
-      });
+      expect(res.statusCode).toBe(402);
+      expect((res.jsonData as Record<string, unknown>).x402Version).toBe(2);
     });
   });
 
@@ -480,17 +468,13 @@ describe('ZkCredentialMiddleware', () => {
     });
 
     it('should reject mismatched issuer pubkey X', async () => {
-      const originId = stringToField('/api/test');
       const middleware = new ZkCredentialMiddleware({
         ...defaultConfig,
-        facilitatorPubkey: { x: 100n, y: 2n },
+        issuerPubkey: { x: 100n, y: 2n },
         skipProofVerification: false,
       });
       const body = createValidBody('0xabc', 1, {
-        serviceId: 1n,
-        originId,
-        facilitatorPubkeyX: 999n,
-        facilitatorPubkeyY: 2n,
+        issuerPubkey: toBase64Url(pointToBytes({ x: 999n, y: 2n })),
       });
       const req = createMockRequest(body);
 
@@ -503,17 +487,13 @@ describe('ZkCredentialMiddleware', () => {
     });
 
     it('should reject mismatched issuer pubkey Y', async () => {
-      const originId = stringToField('/api/test');
       const middleware = new ZkCredentialMiddleware({
         ...defaultConfig,
-        facilitatorPubkey: { x: 1n, y: 200n },
+        issuerPubkey: { x: 1n, y: 200n },
         skipProofVerification: false,
       });
       const body = createValidBody('0xabc', 1, {
-        serviceId: 1n,
-        originId,
-        facilitatorPubkeyX: 1n,
-        facilitatorPubkeyY: 999n,
+        issuerPubkey: toBase64Url(pointToBytes({ x: 1n, y: 999n })),
       });
       const req = createMockRequest(body);
 
