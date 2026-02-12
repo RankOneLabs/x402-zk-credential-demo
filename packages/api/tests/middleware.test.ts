@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 import { ZkCredentialMiddleware, type ZkCredentialConfig } from '../src/middleware.js';
-import { bigIntToHex, stringToField, pointToBytes, toBase64Url } from '@demo/crypto';
+import { stringToField, pointToBytes, toBase64Url } from '@demo/crypto';
 
 // Skip ZK backend tests in CI — UltraHonk WASM takes >30s per test on GitHub Actions
 const describeZK = process.env.CI ? describe.skip : describe;
