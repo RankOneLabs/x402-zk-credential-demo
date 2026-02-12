@@ -165,6 +165,47 @@ export interface X402PaymentResponse {
 }
 
 // =============================================================================
+// ZK Session Transport Types (zk-session-transport-instructions)
+// =============================================================================
+
+/** Header names for the ZK Session transport layer */
+export const ZK_SESSION_HEADERS = {
+  /** Signal header: client sends "1" to indicate body contains ZK session envelope */
+  SIGNAL: 'ZK-SESSION',
+  /** Client → Server: base64(JSON) commitment during issuance */
+  COMMITMENT: 'ZK-SESSION-COMMITMENT',
+  /** Server → Client: base64(JSON) credential during issuance */
+  CREDENTIAL: 'ZK-SESSION-CREDENTIAL',
+  /** Server → Client: "1" to confirm ZK presentation was accepted */
+  ACCEPTED: 'ZK-SESSION-ACCEPTED',
+} as const;
+
+/** ZK-SESSION-COMMITMENT header value (decoded from base64 JSON) */
+export interface ZkSessionCommitmentHeader {
+  x: string;  // hex-encoded: "0x..."
+  y: string;  // hex-encoded: "0x..."
+}
+
+/**
+ * Body envelope for presentation requests (signalled by ZK-SESSION: 1 header).
+ * The proof is too large for headers (~15KB), so it goes in the body.
+ */
+export interface ZkSessionPresentationEnvelope {
+  x402_zk_session: {
+    version: '0.1.0';
+    suite: ZKCredentialSuite;
+    kid?: string;
+    proof: string;          // base64url
+    current_time: number;
+    public_outputs: {
+      origin_token: string;
+      tier: number;
+    };
+  };
+  payload: unknown | null;  // original application body, or null for GET-like
+}
+
+// =============================================================================
 // Error Types (spec §14)
 // =============================================================================
 

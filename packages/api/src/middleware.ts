@@ -30,6 +30,7 @@ import {
   toBase64Url,
   fromBase64Url,
   pointToBytes,
+  ZK_SESSION_HEADERS,
 } from '@demo/crypto';
 import { RateLimiter, type RateLimitConfig } from './ratelimit.js';
 import { ZkVerifier } from './verifier.js';
@@ -191,29 +192,52 @@ export class ZkCredentialMiddleware {
   }
 
   /**
-   * Express middleware for ZK credential verification (spec §11)
+   * Express middleware for ZK credential verification
+   * 
+   * Transport layer (per zk-session-transport-instructions):
+   * - Phase 1 (Issuance): Commitment via ZK-SESSION-COMMITMENT header,
+   *   credential returned via ZK-SESSION-CREDENTIAL header
+   * - Phase 2 (Presentation): ZK-SESSION: 1 signal header,
+   *   proof in body envelope { x402_zk_session, payload }
    */
   middleware() {
     return async (req: Request, res: Response, next: NextFunction) => {
       // 0. Handle Payment Settlement (Mediated Flow)
+      // Issuance uses ZK-SESSION-COMMITMENT header for commitment transport
+      const commitmentHeader = req.get(ZK_SESSION_HEADERS.COMMITMENT.toLowerCase());
       const paymentBody = req.body as Record<string, unknown> | undefined;
       const payment = (paymentBody as { payment?: unknown } | undefined)?.payment;
-      const zkCredential = (paymentBody as { extensions?: { 'zk-credential'?: { commitment?: string } } } | undefined)
-        ?.extensions?.['zk-credential'];
-      if (payment) {
+
+      if (payment && commitmentHeader) {
         try {
-          console.log('[ZkCredential] Processing payment body...');
+          console.log('[ZkCredential] Processing payment with ZK-SESSION-COMMITMENT header...');
 
           if (!paymentBody || typeof paymentBody !== 'object') {
             throw new PaymentError('invalid_proof', 'Missing payment body');
           }
 
-          if (!zkCredential?.commitment) {
+          // Parse commitment from ZK-SESSION-COMMITMENT header (base64-encoded JSON {x, y})
+          let commitmentJson: { x: string; y: string };
+          try {
+            const decoded = Buffer.from(commitmentHeader, 'base64').toString('utf-8');
+            commitmentJson = JSON.parse(decoded) as { x: string; y: string };
+            if (!commitmentJson.x || !commitmentJson.y) {
+              throw new Error('Missing x or y field');
+            }
+          } catch {
             throw new PaymentError(
               'invalid_proof',
-              'Missing extensions.zk-credential.commitment per spec §8.2'
+              'Invalid ZK-SESSION-COMMITMENT header: expected base64-encoded JSON {x, y}'
             );
           }
+
+          // Convert hex commitment to suite-prefixed base64url for facilitator
+          // The facilitator expects: "pedersen-schnorr-poseidon-ultrahonk:<base64url(04||x||y)>"
+          const xBigInt = BigInt(commitmentJson.x);
+          const yBigInt = BigInt(commitmentJson.y);
+          const commitmentBytes = pointToBytes({ x: xBigInt, y: yBigInt });
+          const commitmentB64 = toBase64Url(commitmentBytes);
+          const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', commitmentB64);
 
           // Call Facilitator /settle
           // Reuse buildPaymentRequirements() to ensure consistency with 402 response
@@ -222,7 +246,7 @@ export class ZkCredentialMiddleware {
             paymentRequirements: this.buildPaymentRequirements(),
             extensions: {
               'zk-credential': {
-                commitment: zkCredential.commitment,
+                commitment: commitmentPrefixed,
               },
             },
           };
@@ -258,7 +282,7 @@ export class ZkCredentialMiddleware {
 
           const settleData: unknown = await settleResp.json();
 
-          // Validate settlement response structure (SettlementResponse from facilitator/types.ts)
+          // Validate settlement response structure
           if (!settleData || typeof settleData !== 'object') {
             throw new PaymentError(
               'server_error',
@@ -314,17 +338,18 @@ export class ZkCredentialMiddleware {
             );
           }
 
-          // Construct X402PaymentResponse
+          // Return credential via ZK-SESSION-CREDENTIAL header (base64 JSON)
+          const credentialHeaderValue = Buffer.from(JSON.stringify(cred)).toString('base64');
+          res.set(ZK_SESSION_HEADERS.CREDENTIAL, credentialHeaderValue);
+
+          // Body contains payment response only (credential is in header)
           const clientResp = {
             x402: {
               payment_response: response.payment_receipt,
             },
-            'zk-credential': {
-              credential: cred,
-            },
           };
 
-          console.log('[ZkCredential] Payment settled, credential issued. Returning credential.');
+          console.log('[ZkCredential] Payment settled, credential issued via ZK-SESSION-CREDENTIAL header.');
           res.status(200).json(clientResp);
           return;
 
@@ -348,20 +373,19 @@ export class ZkCredentialMiddleware {
         }
       }
 
+      // Phase 2: Presentation — requires ZK-SESSION: 1 signal header
+      const zkSessionSignal = req.get(ZK_SESSION_HEADERS.SIGNAL.toLowerCase());
+      if (!zkSessionSignal || zkSessionSignal !== '1') {
+        // No ZK-SESSION header → return 402 Payment Required
+        const resourceUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+        res.status(402).json(this.build402Response(resourceUrl));
+        return;
+      }
+
       const result = await this.verifyRequest(req);
 
       if (!result.valid) {
-        // 402: Payment Required when no credentials provided (spec §6)
-        // Prompts client to discover payment requirements and obtain credentials
-        const hasPresentation = !!(paymentBody && typeof paymentBody === 'object' && 'zk-credential' in paymentBody);
-        if (!hasPresentation) {
-          const resourceUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-          res.status(402).json(this.build402Response(resourceUrl));
-          return;
-        }
-
         const status = ERROR_CODE_TO_STATUS[result.errorCode];
-
         res.status(status).json(this.buildErrorResponse(result.errorCode, result.message));
         return;
       }
@@ -379,6 +403,15 @@ export class ZkCredentialMiddleware {
         return;
       }
 
+      // Unwrap payload from envelope into req.body for downstream handlers
+      const envelope = req.body as Record<string, unknown> | undefined;
+      if (envelope && typeof envelope === 'object' && 'payload' in envelope) {
+        req.body = envelope.payload ?? {};
+      }
+
+      // Set ZK-SESSION-ACCEPTED response header
+      res.set(ZK_SESSION_HEADERS.ACCEPTED, '1');
+
       // Attach credential info to request
       req.zkCredential = {
         tier: result.tier,
@@ -390,7 +423,8 @@ export class ZkCredentialMiddleware {
   }
 
   /**
-   * Parse zk-credential envelope from request body (spec §6.3)
+   * Parse ZK session presentation envelope from request body.
+   * Reads from body.x402_zk_session (per transport instructions).
    */
   private parseProofEnvelope(req: Request): {
     suite: string;
@@ -400,16 +434,16 @@ export class ZkCredentialMiddleware {
     publicOutputs: { originToken: string; tier: number };
   } | null {
     const body = req.body as Record<string, unknown> | undefined;
-    const zkCredential = (body as { 'zk-credential'?: Record<string, unknown> } | undefined)?.['zk-credential'];
-    if (!zkCredential || typeof zkCredential !== 'object') {
+    const zkSession = (body as { x402_zk_session?: Record<string, unknown> } | undefined)?.x402_zk_session;
+    if (!zkSession || typeof zkSession !== 'object') {
       return null;
     }
 
-    const suite = zkCredential.suite;
-    const kid = zkCredential.kid;
-    const proofB64 = zkCredential.proof;
-    const currentTime = zkCredential.current_time;
-    const publicOutputs = zkCredential.public_outputs as Record<string, unknown> | undefined;
+    const suite = zkSession.suite;
+    const kid = zkSession.kid;
+    const proofB64 = zkSession.proof;
+    const currentTime = zkSession.current_time;
+    const publicOutputs = zkSession.public_outputs as Record<string, unknown> | undefined;
 
     if (typeof suite !== 'string' || typeof proofB64 !== 'string' || !publicOutputs) {
       return null;
@@ -422,7 +456,7 @@ export class ZkCredentialMiddleware {
       return null;
     }
     // current_time is required — the proof is bound to the exact value used during
-    // generation, so the server cannot substitute its own clock (§6.3, §11.1)
+    // generation, so the server cannot substitute its own clock
     if (typeof currentTime !== 'number') {
       return null;
     }

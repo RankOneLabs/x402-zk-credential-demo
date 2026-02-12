@@ -25,7 +25,14 @@ export function createApiServer(config: ApiServerConfig) {
   // Middleware
   app.use(cors({
     origin: config.corsOrigins ?? '*',
-    exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
+    exposedHeaders: [
+      'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset',
+      'ZK-SESSION-CREDENTIAL', 'ZK-SESSION-ACCEPTED',
+    ],
+    allowedHeaders: [
+      'Content-Type', 'Authorization',
+      'ZK-SESSION', 'ZK-SESSION-COMMITMENT',
+    ],
   }));
   app.use(express.json({ limit: '64kb' }));
 

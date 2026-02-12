@@ -28,6 +28,7 @@ import {
   pointToBytes,
   fieldToBytes,
   bytesToField,
+  ZK_SESSION_HEADERS,
 } from '@demo/crypto';
 
 /** Settlement request for x402 v2 */
@@ -337,13 +338,10 @@ export class ZkCredentialClient {
   }
 
   /**
-   * Settle payment and obtain credential using x402 v2 signed payload (spec §7.2, §7.3)
+   * Settle payment and obtain credential using x402 v2 signed payload
    * 
-   * This method:
-   * 1. Generates secrets and commitment locally
-   * 2. Creates EIP-3009 signed payment authorization
-   * 3. Sends to facilitator for settlement
-   * 4. Stores and returns the credential
+   * Transport: Commitment sent via ZK-SESSION-COMMITMENT header,
+   * credential received via ZK-SESSION-CREDENTIAL response header.
    * 
    * @param facilitatorUrl - URL of the facilitator's /settle endpoint
    * @param paymentPayload - x402 v2 PaymentPayload with signed EIP-3009 authorization
@@ -360,25 +358,28 @@ export class ZkCredentialClient {
 
     // Compute commitment
     const commitment = await pedersenCommit(nullifierSeed, blindingFactor);
-    const commitmentBytes = pointToBytes(commitment.point);
-    const commitmentB64 = toBase64Url(commitmentBytes);
-    const commitmentPrefixed = addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', commitmentB64);
 
-    // Build x402 v2 settlement request
-    const request: SettlementRequest = {
+    // Encode commitment as base64 JSON for ZK-SESSION-COMMITMENT header
+    // Header format: base64(JSON({x: "0x...", y: "0x..."}))
+    const commitmentHeaderJson = JSON.stringify({
+      x: bigIntToHex(commitment.point.x),
+      y: bigIntToHex(commitment.point.y),
+    });
+    const commitmentHeaderValue = Buffer.from(commitmentHeaderJson).toString('base64');
+
+    // Build settlement request body (payment data only, commitment is in header)
+    const request = {
       payment: paymentPayload,
       paymentRequirements,
-      extensions: {
-        'zk-credential': {
-          commitment: commitmentPrefixed,
-        },
-      },
     };
 
-    // Send to facilitator
+    // Send to facilitator with commitment in header
     const response = await fetch(facilitatorUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        [ZK_SESSION_HEADERS.COMMITMENT]: commitmentHeaderValue,
+      },
       body: JSON.stringify(request),
     });
 
@@ -387,18 +388,25 @@ export class ZkCredentialClient {
       throw new Error(`Settlement failed: ${error.error || response.statusText}`);
     }
 
-    const data = await response.json() as SettlementResponse;
+    // Extract credential from ZK-SESSION-CREDENTIAL response header
+    const credentialHeader = response.headers.get(ZK_SESSION_HEADERS.CREDENTIAL);
+    if (!credentialHeader) {
+      throw new Error('Settlement response missing ZK-SESSION-CREDENTIAL header');
+    }
 
-    // Extract credential from response
-    const credential = data.extensions?.['zk-credential']?.credential;
-    if (!credential) {
-      throw new Error('Settlement response missing extensions.zk-credential.credential');
+    let credential: CredentialWireFormat;
+    try {
+      const decoded = Buffer.from(credentialHeader, 'base64').toString('utf-8');
+      credential = JSON.parse(decoded) as CredentialWireFormat;
+    } catch {
+      throw new Error('Invalid ZK-SESSION-CREDENTIAL header: expected base64-encoded JSON credential');
     }
 
     // Verify the returned commitment matches what we sent
     // This prevents a malicious facilitator from issuing credentials with wrong commitments
     const { value: returnedCommitmentB64 } = parseSchemePrefix(credential.commitment);
-    const expectedCommitmentB64 = commitmentB64;
+    const expectedCommitmentBytes = pointToBytes(commitment.point);
+    const expectedCommitmentB64 = toBase64Url(expectedCommitmentBytes);
 
     if (returnedCommitmentB64 !== expectedCommitmentB64) {
       throw new Error(
@@ -422,10 +430,10 @@ export class ZkCredentialClient {
   }
 
   /**
-   * Make an authenticated request using zk-credential body presentation (spec §6.3)
+   * Make an authenticated request using ZK-SESSION transport.
    * 
-   * If the request receives a 402 response, this method will NOT automatically
-   * handle payment - the caller must obtain a credential first.
+   * Sets ZK-SESSION: 1 signal header and wraps proof + app payload
+   * in { x402_zk_session, payload } body envelope.
    */
   async makeAuthenticatedRequest(
     url: string,
@@ -552,23 +560,26 @@ export class ZkCredentialClient {
 
     const headers = new Headers(options.headers);
     headers.set('Content-Type', 'application/json');
+    // Signal header: indicates body contains ZK session envelope
+    headers.set(ZK_SESSION_HEADERS.SIGNAL, '1');
 
-    let baseBody: Record<string, unknown> = {};
+    // Extract original application payload from options.body
+    let appPayload: unknown = null;
     if (options.body) {
       if (typeof options.body === 'string') {
         try {
-          baseBody = JSON.parse(options.body) as Record<string, unknown>;
+          appPayload = JSON.parse(options.body);
         } catch {
           throw new Error('makeAuthenticatedRequest only supports JSON string bodies');
         }
       } else if (typeof options.body === 'object') {
-        baseBody = options.body as unknown as Record<string, unknown>;
+        appPayload = options.body;
       }
     }
 
+    // Build body envelope: { x402_zk_session, payload }
     const body = JSON.stringify({
-      ...baseBody,
-      'zk-credential': {
+      x402_zk_session: {
         version: '0.1.0',
         suite: 'pedersen-schnorr-poseidon-ultrahonk',
         proof: proof.proof,
@@ -578,6 +589,7 @@ export class ZkCredentialClient {
           tier: proof.tier,
         },
       },
+      payload: appPayload,
     });
 
     return fetch(url, { ...options, method: options.method ?? 'POST', headers, body });
