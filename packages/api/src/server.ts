@@ -181,7 +181,7 @@ if (isMain) {
   const pubkeyY = issuerPubkeyY ?? '0x1b5fa4c18138ad44ec555b48cd85155693b446f96e5a9a3a46076666946ba192';
 
   if (skipProofVerification && (!issuerPubkeyX || !issuerPubkeyY)) {
-    console.warn('[API] Warning: Using dummy issuer public keys (proof verification is disabled)')
+    console.warn('[API] Warning: Using dummy issuer public keys (proof verification is disabled)');
   }
 
   const config: ApiServerConfig = {
