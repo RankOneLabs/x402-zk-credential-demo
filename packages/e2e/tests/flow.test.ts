@@ -5,7 +5,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { createApiServer } from '../../api/src/server.js';
 import { ZkCredentialClient } from '../../cli/src/client.js';
 import { createFacilitatorServer } from '../../facilitator/src/server.js';
-import { hexToBigInt, type X402WithZKCredentialResponse, type PaymentPayload, type PaymentRequirements, fromBase64Url, bytesToPoint, bigIntToHex, toBase64Url, fieldToBytes } from '@demo/crypto';
+import { hexToBigInt, type X402WithZKCredentialResponse, type PaymentPayload, type PaymentRequirements, fromBase64Url, bytesToPoint, bigIntToHex } from '@demo/crypto';
 // Import x402 client libs for payment payload creation
 import { x402Client } from '@x402/core/client';
 import { registerExactEvmScheme } from '@x402/evm/exact/client';
