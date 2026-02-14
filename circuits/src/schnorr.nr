@@ -71,10 +71,31 @@ pub fn verify(
 }
 
 #[test]
-fn test_schnorr_placeholder() {
-    // TODO: Add test with known test vectors from TypeScript implementation
-    // This ensures Noir and TypeScript produce matching signatures
-    assert(true);
+fn test_schnorr_reject_wrong_message() {
+    // Regression test vectors with a different message - signature must not verify
+    let pk_x: Field = 0x1bd2ca043010eba0fa5e958f0562792b2861e231c2fd59adf48f26b506a12e0b;
+    let pk_y: Field = 0x21f7816e0233e455de2696cc40d5d51c5df34561740d84e17bc360b1aac892fb;
+    let r_x: Field = 0x2f6f37f2784b7544ccb4ecde2fad5dec1dfc16556b34d51b2f0e0d7fecf281ba;
+    let r_y: Field = 0x06e1f78fb1a6682205a20de90a07d33213521835c10bfadcb61c4358256e34e9;
+    let s_lo: Field = 0x39e17e296295c1c75f0b9be389f7ff22;
+    let s_hi: Field = 0x713575f9d673ed53a66b6143ec6a711;
+
+    let wrong_message: Field = 999;
+    let valid = verify(pk_x, pk_y, wrong_message, r_x, r_y, s_lo, s_hi);
+    assert(!valid, "Signature should not verify with wrong message");
+}
+
+#[test]
+fn test_schnorr_reject_wrong_pubkey() {
+    // Correct signature but verified against the generator G instead of the real pubkey
+    let message: Field = 0x2d08784ef1a8e6c8f5f2b6342b1844829c4ed53a58694fc1c915fb7901ec941a;
+    let r_x: Field = 0x2f6f37f2784b7544ccb4ecde2fad5dec1dfc16556b34d51b2f0e0d7fecf281ba;
+    let r_y: Field = 0x06e1f78fb1a6682205a20de90a07d33213521835c10bfadcb61c4358256e34e9;
+    let s_lo: Field = 0x39e17e296295c1c75f0b9be389f7ff22;
+    let s_hi: Field = 0x713575f9d673ed53a66b6143ec6a711;
+
+    let valid = verify(G_X, G_Y, message, r_x, r_y, s_lo, s_hi);
+    assert(!valid, "Signature should not verify with wrong pubkey");
 }
 
 #[test]

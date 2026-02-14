@@ -84,3 +84,91 @@ fn test_valid_credential() {
     // TODO: Add test with valid credential
     // This will be populated once we have test vectors from TypeScript
 }
+
+#[test(should_fail_with = "Commitment x mismatch")]
+fn test_reject_wrong_commitment() {
+    let nullifier_seed: Field = 12345;
+    let blinding_factor: Field = 67890;
+    let (cx, _cy) = pedersen::commit(nullifier_seed, blinding_factor);
+
+    let _ = main(
+        1, 100, 1, 0, 0,
+        1, 1, 1000, 200,
+        cx + 1, 999,
+        0, 0, 0, 0,
+        nullifier_seed, blinding_factor,
+        0,
+    );
+}
+
+#[test(should_fail_with = "Service ID mismatch")]
+fn test_reject_service_id_mismatch() {
+    let nullifier_seed: Field = 12345;
+    let blinding_factor: Field = 67890;
+    let (cx, cy) = pedersen::commit(nullifier_seed, blinding_factor);
+
+    let _ = main(
+        1, 100, 1, 0, 0,
+        2, 1, 1000, 200,
+        cx, cy,
+        0, 0, 0, 0,
+        nullifier_seed, blinding_factor,
+        0,
+    );
+}
+
+#[test(should_fail_with = "Credential expired")]
+fn test_reject_expired_credential() {
+    let nullifier_seed: Field = 12345;
+    let blinding_factor: Field = 67890;
+    let (cx, cy) = pedersen::commit(nullifier_seed, blinding_factor);
+
+    let _ = main(
+        1, 200, 1, 0, 0,
+        1, 1, 1000, 100,
+        cx, cy,
+        0, 0, 0, 0,
+        nullifier_seed, blinding_factor,
+        0,
+    );
+}
+
+#[test(should_fail_with = "Identity index exceeds limit")]
+fn test_reject_identity_index_exceeds_limit() {
+    let nullifier_seed: Field = 12345;
+    let blinding_factor: Field = 67890;
+    let (cx, cy) = pedersen::commit(nullifier_seed, blinding_factor);
+
+    let _ = main(
+        1, 100, 1, 0, 0,
+        1, 1, 5, 200,
+        cx, cy,
+        0, 0, 0, 0,
+        nullifier_seed, blinding_factor,
+        5,
+    );
+}
+
+#[test(should_fail_with = "Invalid signature")]
+fn test_reject_invalid_signature() {
+    let nullifier_seed: Field = 12345;
+    let blinding_factor: Field = 67890;
+    let (cx, cy) = pedersen::commit(nullifier_seed, blinding_factor);
+
+    // Use the known valid keypair from the schnorr regression test as issuer pubkey
+    let pk_x: Field = 0x1bd2ca043010eba0fa5e958f0562792b2861e231c2fd59adf48f26b506a12e0b;
+    let pk_y: Field = 0x21f7816e0233e455de2696cc40d5d51c5df34561740d84e17bc360b1aac892fb;
+
+    // Use the generator G as R (valid curve point, but wrong signature)
+    let r_x: Field = schnorr::G_X;
+    let r_y: Field = schnorr::G_Y;
+
+    let _ = main(
+        1, 100, 1, pk_x, pk_y,
+        1, 1, 1000, 200,
+        cx, cy,
+        r_x, r_y, 1, 0,
+        nullifier_seed, blinding_factor,
+        0,
+    );
+}
