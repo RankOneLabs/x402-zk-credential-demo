@@ -5,20 +5,16 @@ use std::embedded_curve_ops::{EmbeddedCurvePoint, EmbeddedCurveScalar, multi_sca
 use poseidon::poseidon::bn254;
 use super::schnorr;
 
-// Grumpkin G0 from bb.js pedersenCommit([1, 0], 0)
-global G_X: Field = 0x083e7911d835097629f0067531fc15cafd79a89beecb39903f69572c636f4a5a;
-global G_Y: Field = 0x1a7f5efaad7f315c25a918f30cc8d7333fccab7ad7c90f14de81bcc528f9935d;
-
 #[test]
 fn test_generator_scalar_mul() {
     // Test: 1 * G = G
-    let g_point = EmbeddedCurvePoint { x: G_X, y: G_Y, is_infinite: false };
+    let g_point = EmbeddedCurvePoint { x: schnorr::G_X, y: schnorr::G_Y, is_infinite: false };
     let one = EmbeddedCurveScalar { lo: 1, hi: 0 };
     
     let result = multi_scalar_mul([g_point], [one]);
     
-    assert(result.x == G_X, "1*G should give G.x");
-    assert(result.y == G_Y, "1*G should give G.y");
+    assert(result.x == schnorr::G_X, "1*G should give G.x");
+    assert(result.y == schnorr::G_Y, "1*G should give G.y");
 }
 
 #[test]
@@ -28,7 +24,7 @@ fn test_scalar_mul_2() {
     // x: 21257496462400913801282840561021446049249742519529950649510548656246698707241n
     // y: 9311206937097351457745531264432686767848437768817720608527154146862405004551n
     
-    let g_point = EmbeddedCurvePoint { x: G_X, y: G_Y, is_infinite: false };
+    let g_point = EmbeddedCurvePoint { x: schnorr::G_X, y: schnorr::G_Y, is_infinite: false };
     let two = EmbeddedCurveScalar { lo: 2, hi: 0 };
     
     let result = multi_scalar_mul([g_point], [two]);

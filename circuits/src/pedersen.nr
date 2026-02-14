@@ -47,3 +47,21 @@ fn test_different_secrets_different_commitments() {
     // Different secrets should produce different commitments
     assert((c1_x != c2_x) | (c1_y != c2_y));
 }
+
+#[test]
+fn test_verify_opening_rejects_wrong_secret() {
+    let (cx, cy) = commit(12345, 67890);
+    assert(!verify_opening(cx, cy, 99999, 67890));
+}
+
+#[test]
+fn test_verify_opening_rejects_wrong_blinding() {
+    let (cx, cy) = commit(12345, 67890);
+    assert(!verify_opening(cx, cy, 12345, 99999));
+}
+
+#[test]
+fn test_verify_opening_rejects_wrong_commitment() {
+    let (cx, cy) = commit(12345, 67890);
+    assert(!verify_opening(cx + 1, cy, 12345, 67890));
+}
