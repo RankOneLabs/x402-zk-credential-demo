@@ -6,8 +6,8 @@ use poseidon::poseidon::bn254;
 
 // Grumpkin generator G0 (from Barretenberg's pedersenCommit generators)
 // This is the point 1 * G0 from pedersen_commitment([1, 0], 0)
-global G_X: Field = 0x083e7911d835097629f0067531fc15cafd79a89beecb39903f69572c636f4a5a;
-global G_Y: Field = 0x1a7f5efaad7f315c25a918f30cc8d7333fccab7ad7c90f14de81bcc528f9935d;
+pub global G_X: Field = 0x083e7911d835097629f0067531fc15cafd79a89beecb39903f69572c636f4a5a;
+pub global G_Y: Field = 0x1a7f5efaad7f315c25a918f30cc8d7333fccab7ad7c90f14de81bcc528f9935d;
 
 /// Verify a Schnorr signature
 /// 
