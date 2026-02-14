@@ -258,7 +258,7 @@ When returning `402 Payment Required`, servers supporting zk-credential include 
     {
       "scheme": "exact",
       "network": "eip155:8453",
-      "maxAmountRequired": "100000",
+      "amount": "100000",
       "resource": "https://api.example.com/data",
       "payTo": "0x1234...",
       "asset": "0xABCD..."
@@ -509,7 +509,7 @@ Given a request URL, produce `canonical_origin` via the following deterministic 
 | `https://api.example.com/v1/data?key=val#frag` | `https://api.example.com/v1/data` |
 | `https://api.example.com/hello%20world` | `https://api.example.com/hello%20world` |
 
-### 10.3 Security Binding
+### 10.4 Security Binding
 
 Credentials/proofs MUST bind to:
 - **Audience** — via `service_id` + `origin_id`
@@ -537,8 +537,10 @@ The ZK proof MUST prove:
 2. The credential was signed by the `issuer_pubkey` provided in the presentation.
 3. `current_time <= expires_at`.
 4. Credential `tier` satisfies server policy.
-5. `origin_id` is correctly bound (prevents replay across origins).
-6. The proof outputs include `(origin_token, tier)`.
+5. The client's chosen derivation index `i` satisfies `0 <= i < identity_limit`.
+6. `origin_token` is deterministically derived from private credential material, `origin_id`, and derivation index `i`.
+7. `origin_id` is correctly bound (prevents replay across origins).
+8. The proof outputs include `(origin_token, tier)`.
 
 Verifiers **MUST** verify the proof using the provided `issuer_pubkey` and **MUST** ensure that the key is authorized for the associated `service_id` by local policy.
 
@@ -656,7 +658,7 @@ Other binary fields (`proof`, `origin_token`) use plain base64url without suite 
 
 | Code | HTTP | Meaning |
 |------|------|---------|
-| `credential_missing` | 402 | No credential provided |
+| `credential_missing` | 402 | No payment or credential provided |
 | `tier_insufficient` | 402 | Tier below requirement |
 | `unsupported_version` | 400 | Version not supported |
 | `unsupported_suite` | 400 | Suite not supported |
