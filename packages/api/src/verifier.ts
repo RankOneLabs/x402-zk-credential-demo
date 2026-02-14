@@ -187,7 +187,7 @@ export class ZkVerifier {
 
     try {
       // Verify the proof
-      // Public inputs order: service_id, current_time, origin_id, facilitator_pubkey_x, facilitator_pubkey_y
+      // Public inputs order: service_id, current_time, origin_id, issuer_pubkey_x, issuer_pubkey_y
       // Public outputs: origin_token, tier
       // UltraHonkBackend expects proof as Uint8Array, not Buffer
       const proofArray = proofData.proof instanceof Uint8Array

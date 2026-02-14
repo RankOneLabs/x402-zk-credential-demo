@@ -52,10 +52,11 @@ export type ZKCredentialSuite =
   | 'pedersen-schnorr-poseidon-ultrahonk'
   | 'pedersen-schnorr-poseidon-groth16';
 
-/** Credential as signed by facilitator (spec §7.3) */
+/** Credential as signed by issuer (spec §8.6) */
 export interface SignedCredential {
   suite: ZKCredentialSuite;
   service_id: string; // base64url-encoded
+  tier: number;
   identityLimit: number;
   expiresAt: number;
   userCommitment: Point;

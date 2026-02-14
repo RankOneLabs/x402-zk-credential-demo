@@ -56,8 +56,8 @@ async function main() {
         service_id: fmt(serviceId),
         current_time: fmt(currentTime),
         origin_id: fmt(originId),
-        facilitator_pubkey_x: fmt(publicKey.x),
-        facilitator_pubkey_y: fmt(publicKey.y),
+        issuer_pubkey_x: fmt(publicKey.x),
+        issuer_pubkey_y: fmt(publicKey.y),
 
         cred_service_id: fmt(serviceId),
         cred_tier: fmt(credTier),
