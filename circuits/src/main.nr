@@ -15,8 +15,8 @@ fn main(
     service_id: pub Field,
     current_time: pub Field,
     origin_id: pub Field,
-    facilitator_pubkey_x: pub Field,
-    facilitator_pubkey_y: pub Field,
+    issuer_pubkey_x: pub Field,
+    issuer_pubkey_y: pub Field,
     
     // === Private inputs: Credential ===
     cred_service_id: Field,
@@ -62,8 +62,8 @@ fn main(
     
     // 6. Verify Schnorr signature
     let sig_valid = schnorr::verify(
-        facilitator_pubkey_x,
-        facilitator_pubkey_y,
+        issuer_pubkey_x,
+        issuer_pubkey_y,
         msg,
         sig_r_x,
         sig_r_y,

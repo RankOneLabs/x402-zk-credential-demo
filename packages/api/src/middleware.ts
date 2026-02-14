@@ -30,6 +30,7 @@ import {
   pointToBytes,
   bytesToPoint,
   fieldToBytes,
+  bytesToField,
 } from '@demo/crypto';
 import { RateLimiter, type RateLimitConfig } from './ratelimit.js';
 import { ZkVerifier } from './verifier.js';
@@ -255,6 +256,7 @@ export class ZkCredentialMiddleware {
   * Reads from body.x402_zk_credential.
    */
   private parseProofEnvelope(req: Request): {
+    version: string;
     suite: string;
     issuerPubkey: string;
     proofB64: string;
@@ -267,13 +269,14 @@ export class ZkCredentialMiddleware {
       return null;
     }
 
+    const version = zkSession.version;
     const suite = zkSession.suite;
     const issuerPubkey = zkSession.issuer_pubkey;
     const proofB64 = zkSession.proof;
     const currentTime = zkSession.current_time;
     const publicOutputs = zkSession.public_outputs as Record<string, unknown> | undefined;
 
-    if (typeof suite !== 'string' || typeof issuerPubkey !== 'string' || typeof proofB64 !== 'string' || !publicOutputs) {
+    if (typeof version !== 'string' || typeof suite !== 'string' || typeof issuerPubkey !== 'string' || typeof proofB64 !== 'string' || !publicOutputs) {
       return null;
     }
 
@@ -302,6 +305,7 @@ export class ZkCredentialMiddleware {
       return null;
     }
     return {
+      version,
       suite,
       issuerPubkey,
       proofB64,
@@ -350,7 +354,12 @@ export class ZkCredentialMiddleware {
       return { valid: false, errorCode: 'credential_missing', message: 'Missing zk-credential presentation' };
     }
 
-    // Step 3: Check suite
+    // Step 3a: Check version (spec: for 0.x versions, must match exactly)
+    if (presentation.version !== '0.1.0') {
+      return { valid: false, errorCode: 'unsupported_version', message: `Unsupported version: ${presentation.version}` };
+    }
+
+    // Step 3b: Check suite
     if (presentation.suite !== 'pedersen-schnorr-poseidon-ultrahonk') {
       return { valid: false, errorCode: 'unsupported_suite', message: `Unsupported suite: ${presentation.suite}` };
     }
@@ -395,13 +404,16 @@ export class ZkCredentialMiddleware {
       return { valid: true, tier, originToken };
     }
 
+    // Convert base64url origin_token from wire to hex for verifier public inputs
+    const originTokenHex = bigIntToHex(bytesToField(fromBase64Url(presentation.publicOutputs.originToken)));
+
     const publicInputs = [
       bigIntToHex(this.config.serviceId),
       bigIntToHex(proofTime),
       bigIntToHex(originId),
       bigIntToHex(issuerKey.x),
       bigIntToHex(issuerKey.y),
-      presentation.publicOutputs.originToken,
+      originTokenHex,
       bigIntToHex(BigInt(presentation.publicOutputs.tier)),
     ];
 
@@ -419,7 +431,8 @@ export class ZkCredentialMiddleware {
       }
 
       // Step 8: Extract outputs (origin_token, tier)
-      const originToken = result.outputs?.originToken ?? '';
+      // Use base64url origin_token from wire (verification confirmed it matches circuit output)
+      const originToken = presentation.publicOutputs.originToken;
       const tier = result.outputs?.tier ?? 0;
 
       // Step 10-11: Check minimum tier requirement

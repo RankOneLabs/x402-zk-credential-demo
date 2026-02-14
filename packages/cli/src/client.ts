@@ -553,8 +553,8 @@ export class ZkCredentialClient {
       service_id: fmt(bytesToField(fromBase64Url(credential.serviceId))),
       current_time: fmt(currentTime),
       origin_id: fmt(originId),
-      facilitator_pubkey_x: fmt(credential.issuerPubkey.x),
-      facilitator_pubkey_y: fmt(credential.issuerPubkey.y),
+      issuer_pubkey_x: fmt(credential.issuerPubkey.x),
+      issuer_pubkey_y: fmt(credential.issuerPubkey.y),
 
       // Private inputs
       cred_service_id: fmt(bytesToField(fromBase64Url(credential.serviceId))),
@@ -587,16 +587,19 @@ export class ZkCredentialClient {
       console.log(`[Client] Proof size: ${proof.length} bytes, ${publicInputs.length} public inputs`);
 
       // Extract outputs from public inputs
-      // Layout: [service_id, current_time, origin_id, facilitator_pubkey_x, facilitator_pubkey_y, origin_token, tier]
-      const originToken = publicInputs[5];
+      // Layout: [service_id, current_time, origin_id, issuer_pubkey_x, issuer_pubkey_y, origin_token, tier]
+      const originTokenHex = publicInputs[5];
       const tier = publicInputs[6];
 
       const proofBytes = typeof proof === 'string' ? fromBase64Url(proof) : proof;
       const proofB64 = toBase64Url(proofBytes);
 
+      // Convert origin_token from hex (Noir output) to base64url (spec wire format)
+      const originTokenB64 = toBase64Url(fieldToBytes(hexToBigInt(originTokenHex)));
+
       return {
         proof: proofB64,
-        originToken: originToken,
+        originToken: originTokenB64,
         tier: Number(hexToBigInt(tier)),
         currentTime: Number(currentTime),
         cachedUntil: Math.min(credential.expiresAt, Number(currentTime) + 60),

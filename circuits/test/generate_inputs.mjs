@@ -66,8 +66,8 @@ async function main() {
   console.log(`service_id = "${serviceId}"`);
   console.log(`current_time = "${currentTime}"`);
   console.log(`origin_id = "${originId}"`);
-  console.log(`facilitator_pubkey_x = "${publicKey.x}"`);
-  console.log(`facilitator_pubkey_y = "${publicKey.y}"`);
+  console.log(`issuer_pubkey_x = "${publicKey.x}"`);
+  console.log(`issuer_pubkey_y = "${publicKey.y}"`);
   console.log('');
   console.log('# Private inputs: Credential');
   console.log(`cred_service_id = "${serviceId}"`);
