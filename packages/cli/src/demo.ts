@@ -137,6 +137,10 @@ async function main() {
   console.log('━━━ PHASE 3: Anonymous API Access ━━━\n');
 
   // Parse issuer pubkey (base64url)
+  // DEMO ONLY: Production deployments MUST provision trusted issuer pubkeys out-of-band
+  // (e.g., via config file, environment variable, or policy service).
+  // Clients MUST NOT bootstrap trust from extension advertisements.
+  // See zk-credential spec §Issuer Keys: Distribution & Rollover.
   const pubkeyBytes = fromBase64Url(issuerPubkeyB64);
   const pubkeyPoint = bytesToPoint(pubkeyBytes);
 

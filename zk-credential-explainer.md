@@ -11,7 +11,7 @@ ZK Credentials extend the x402 flow by adding an issuance step after settlement 
 ### Phase 1: Standard x402 payment + credential issuance
 1. Client requests a protected resource and receives an x402 payment challenge that advertises `zk-credential` support.
 2. Client retries with the x402 payment payload; the commitment is appended inside `PaymentPayload.extensions["zk-credential"].info.commitment` using standard x402 extension plumbing; server verifies/settles via the facilitator.
-3. After settlement, a facilitator-signed credential is returned inside `SettleResponse.extensions["zk-credential"].credential` via the standard `PAYMENT-RESPONSE` header. Zero custom headers are used for issuance.
+3. After settlement, a facilitator-signed credential is returned inside `SettleResponse.extensions["zk-credential"].credential` via the standard `PAYMENT-RESPONSE` header. No extension-specific headers are used for issuance.
 
 The credential is short-lived and bounded, and includes:
 - `service_id` binding (prevents cross-service replay)
@@ -35,7 +35,7 @@ To support replay prevention and usage constraints, the proof derives an `origin
 The server tracks `origin_token` values to enforce constraints (e.g., prevent reuse, rate limit per origin). The client can control linkability behavior by how it uses `identity_index` and `origin_id` across requests/endpoints. `origin_id` is computed from a canonicalized request origin (per the spec) to bind proofs to a specific endpoint.
 
 ## Transport considerations
-Issuance data (commitment, credential) uses standard x402 extension plumbing — `PaymentPayload.extensions` and `SettleResponse.extensions` — requiring zero custom headers. Presentation proofs (~15-20KB for UltraHonk) exceed common HTTP header limits, so redemption uses an `x402_zk_credential` body envelope containing the proof and a `payload` field for the application request body. Public inputs are server-derived **except** for the client-provided `current_time`. The exact wire format is defined in the x402 ZK Credential spec and MUST be followed for interoperability.
+Issuance data (commitment, credential) uses standard x402 extension plumbing — `PaymentPayload.extensions` and `SettleResponse.extensions` — requiring no extension-specific headers; only standard x402 headers (`PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`). Presentation proofs (~15-20KB for UltraHonk) exceed common HTTP header limits, so redemption uses an `x402_zk_credential` body envelope containing the proof and a `payload` field for the application request body. Public inputs are server-derived **except** for the client-provided `current_time`. The exact wire format is defined in the x402 ZK Credential spec and MUST be followed for interoperability.
 
 ## Status
 - A working demo exercises the flow (x402 payment → credential issuance → proof-based access).

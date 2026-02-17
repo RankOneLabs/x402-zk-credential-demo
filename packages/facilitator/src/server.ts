@@ -36,8 +36,7 @@ export function createFacilitatorServer(config: FacilitatorServerConfig) {
   // Get facilitator info (public key, tiers) - spec compliant format
   app.get('/info', async (_req, res, next) => {
     try {
-      const pubkeyPrefixed = await facilitator.getPublicKeyPrefixed();
-      const issuerPubkeyB64 = pubkeyPrefixed.split(':')[1] ?? pubkeyPrefixed;
+      const issuerPubkeyB64 = await facilitator.getPublicKeyBase64();
       res.json({
         service_id: toBase64Url(fieldToBytes(config.serviceId)),
         issuer_suite: 'pedersen-schnorr-poseidon-ultrahonk',

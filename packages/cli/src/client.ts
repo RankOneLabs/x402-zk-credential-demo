@@ -74,6 +74,14 @@ export interface ClientConfig {
   enableProofCache: boolean;
   /** Storage path (optional) */
   storagePath?: string;
+  /**
+   * Trusted issuer public keys (base64url, unpadded).
+   * When set, discover() validates the 402-advertised issuer_pubkey against this allowlist.
+   * Production deployments MUST provision this via out-of-band configuration.
+   */
+  trustedIssuerPubkeys?: string[];
+  /** Maximum clock skew in seconds (default: 60, must match server's max_clock_skew_seconds) */
+  maxClockSkewSeconds?: number;
 }
 
 const DEFAULT_CONFIG: ClientConfig = {
@@ -170,6 +178,16 @@ export class ZkCredentialClient {
 
     const body = await response.json() as X402WithZKCredentialResponse;
     const parsed = this.parse402Response(body);
+
+    // Validate advertised issuer_pubkey against trusted allowlist if configured
+    if (this.config.trustedIssuerPubkeys && this.config.trustedIssuerPubkeys.length > 0) {
+      if (!this.config.trustedIssuerPubkeys.includes(parsed.issuerPubkeyB64)) {
+        throw new Error(
+          `Untrusted issuer_pubkey in 402 response: ${parsed.issuerPubkeyB64.slice(0, 20)}... ` +
+          `not in trusted allowlist. Clients MUST NOT bootstrap trust from advertisements.`
+        );
+      }
+    }
 
     // Cache the issuer pubkey for later use
     this.issuerPubkeyCache.set(parsed.issuerUrl, { ...parsed.issuerPubkey, b64: parsed.issuerPubkeyB64 });
@@ -602,7 +620,7 @@ export class ZkCredentialClient {
         originToken: originTokenB64,
         tier: Number(hexToBigInt(tier)),
         currentTime: Number(currentTime),
-        cachedUntil: Math.min(credential.expiresAt, Number(currentTime) + 60),
+        cachedUntil: Math.min(credential.expiresAt, Number(currentTime) + (this.config.maxClockSkewSeconds ?? 60)),
         meta: {
           serviceId: credential.serviceId,
           originId: originId.toString(),

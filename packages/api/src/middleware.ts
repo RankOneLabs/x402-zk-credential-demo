@@ -5,7 +5,7 @@
  * Compliant with x402 zk-credential spec v0.1.0
  * 
  * **Security Note (Replay Protection):**
- * Proofs are valid within a time window (±60s) and could theoretically be
+ * Proofs are valid within a time window (±max_clock_skew_seconds, default 60) and could theoretically be
  * replayed within that window. However, replays use the
  * same origin_token and thus consume the same rate limit quota - an attacker
  * replaying your proof uses YOUR rate limit, not theirs.
@@ -44,6 +44,8 @@ export interface ZkCredentialConfig {
   rateLimit: RateLimitConfig;
   /** Minimum tier required (default: 0) */
   minTier?: number;
+  /** Maximum clock skew in seconds (default: 60, per spec max_clock_skew_seconds) */
+  maxClockSkewSeconds?: number;
   /** Skip proof verification (for development) */
   skipProofVerification?: boolean;
   /** Facilitator URL for settlement */
@@ -229,9 +231,10 @@ export class ZkCredentialMiddleware {
       }
 
       // Unwrap payload from envelope into req.body for downstream handlers
+      // Spec: server MUST treat payload as the effective request body; null = empty body
       const envelope = req.body as Record<string, unknown> | undefined;
       if (envelope && typeof envelope === 'object' && 'payload' in envelope) {
-        req.body = envelope.payload ?? {};
+        req.body = envelope.payload ?? null;
       }
 
       // Attach credential info to request
@@ -384,10 +387,10 @@ export class ZkCredentialMiddleware {
     // Use the current_time from the presentation (matches the proof)
     const proofTime = BigInt(presentation.currentTime);
 
-    // Validate the proof's current_time is within acceptable drift (±60 seconds)
-    const MAX_TIME_DRIFT = 60n;
+    // Validate the proof's current_time is within acceptable drift (spec: max_clock_skew_seconds)
+    const maxClockSkew = BigInt(this.config.maxClockSkewSeconds ?? 60);
     const timeDiff = serverTime > proofTime ? serverTime - proofTime : proofTime - serverTime;
-    if (timeDiff > MAX_TIME_DRIFT) {
+    if (timeDiff > maxClockSkew) {
       return { valid: false, errorCode: 'invalid_proof', message: `Proof time drift too large: ${timeDiff}s` };
     }
 
