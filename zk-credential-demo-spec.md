@@ -121,11 +121,11 @@ This extension uses a **split transport model** with different mechanisms for is
 1. **Issuance (Phase 1):** Standard x402 extension plumbing. Commitment and credential travel inside the existing `PaymentPayload.extensions` and `SettleResponse.extensions` fields, carried by the standard `PAYMENT-SIGNATURE` and `PAYMENT-RESPONSE` headers.
 2. **Presentation (Phase 2):** Body envelope. ZK proofs (~15KB for UltraHonk) exceed HTTP header limits; they MUST be carried in the request body.
 
-**Zero custom headers** are used for the entire extension lifecycle. Presence of `x402_zk_credential` in the request body is the canonical signal for redemption.
+**No extension-specific headers**; uses only standard x402 headers (`PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`) for issuance. Presence of `x402_zk_credential` in the request body is the canonical signal for redemption.
 
 ### 6.2 Header Inventory
 
-All issuance data travels through standard x402 plumbing, and presentation proofs are carried in the request body. **No custom headers** are used.
+All issuance data travels through standard x402 plumbing, and presentation proofs are carried in the request body. **No extension-specific headers** are used; only standard x402 headers (`PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`).
 
 ### 6.3 Content Types and Encoding
 
@@ -174,7 +174,7 @@ The `payload` field contains whatever the application request body would normall
 | `suite` | Yes | Suite identifier so server selects correct verifier |
 | `issuer_pubkey` | Yes | Base64url raw public-key bytes; verifier must authorize against local key set |
 | `proof` | Yes | Base64url-encoded ZK proof |
-| `current_time` | Yes | Unix timestamp used as public input during proof generation; server validates ±60s drift (§11.1) |
+| `current_time` | Yes | Unix timestamp used as public input during proof generation; server validates within `max_clock_skew_seconds` (default 60) of server clock (§11.1) |
 | `public_outputs` | Yes | Circuit outputs |
 | `payload` | Yes | Original application body, or `null` |
 
@@ -243,7 +243,7 @@ POST /api/resource              → ZK credential redemption request
   Body:   { "x402_zk_credential": {...}, "payload": null }
 ```
 
-The server middleware unwraps the envelope, verifies the proof, and forwards the inner `payload` (or empty body) to the application handler. From the application handler's perspective, it receives a normal request with an attached `tier` value — it never sees the ZK credential envelope.
+The server treats `payload` as the effective request body for the target resource. If `payload` is `null`, the effective body is empty. Middleware may expose verification outputs (`origin_token`, `tier`) to route handlers through implementation-defined mechanisms.
 
 ---
 
@@ -451,7 +451,7 @@ The server constructs public inputs from its own configuration and the client-pr
 | Input | Source |
 |-------|--------|
 | `service_id` | Server configuration (see §10.4) |
-| `current_time` | From client's `x402_zk_credential.current_time`; validated within ±60s of server clock (§11.1) |
+| `current_time` | From client's `x402_zk_credential.current_time`; validated within `max_clock_skew_seconds` (default 60) of server clock (§11.1) |
 | `origin_id` | Computed from request URL per §10 |
 | `issuer_pubkey` | Provided in the request; verifier must authorize against local key set |
 
@@ -548,7 +548,7 @@ Verifiers **MUST** verify the proof using the provided `issuer_pubkey` and **MUS
 
 The circuit uses `current_time` as a public input. The client chooses this value at proof generation time and transmits it in `x402_zk_credential.current_time` (§6.4). The server uses the client-provided value to reconstruct public inputs for proof verification, but MUST validate it against the server's own clock:
 
-- Servers MUST reject requests where `|x402_zk_credential.current_time - server_clock| > 60 seconds`.
+- Servers MUST reject requests where `|x402_zk_credential.current_time - server_clock| > max_clock_skew_seconds` (default: **60**; configurable per deployment).
 - This drift check MUST occur **before** proof verification to avoid wasting computation on stale proofs.
 - Servers MAY include their current time in the 402 response for client synchronization:
   ```json
@@ -765,7 +765,7 @@ Server steps for requests without `x402_zk_credential` in the body:
 | Issuer key compromise | Key rotation, short credential expiry |
 | Credential theft | Short expiry, `identity_limit` limit |
 | Replay attacks | `identity_index` in token derivation |
-| Time manipulation | Client provides `current_time`; server rejects if drift from its own clock exceeds ±60s; circuit enforces `expires_at >= current_time` privately (server cannot distinguish expiry from other failures) |
+| Time manipulation | Client provides `current_time`; server rejects if drift from its own clock exceeds `max_clock_skew_seconds` (default 60); circuit enforces `expires_at >= current_time` privately (server cannot distinguish expiry from other failures) |
 | DoS via verification | Rate limiting, proof size limits |
 | Cross-server replay | `origin_id` includes host |
 
@@ -783,13 +783,13 @@ Server steps for requests without `x402_zk_credential` in the body:
 
 Verification is computationally expensive. Servers SHOULD perform cheap pre-checks before verification:
 - Enforce `Content-Length` limits (e.g., 64KB).
-- Validate `current_time` skew (±60s).
+- Validate `current_time` skew (within `max_clock_skew_seconds`).
 - Check `suite` support (fast fail on unsupported suites).
 - Apply rate limits based on IP or other factors before parsing the proof.
 
 ---
 
-## 18. Verification Keys: Distribution & Rollover
+## 18. Issuer Keys: Distribution & Rollover
 
 - Presentations **MUST** include `issuer_pubkey`.
 - Verifiers **MUST** accept only presentations whose `issuer_pubkey` is authorized by verifier policy for the `service_id` (e.g., local configuration or trusted key set).

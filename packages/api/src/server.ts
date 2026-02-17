@@ -23,6 +23,11 @@ export function createApiServer(config: ApiServerConfig) {
   const zkCredential = new ZkCredentialMiddleware(config.zkCredential);
 
   // Middleware
+  // Explicit: do not trust X-Forwarded-* headers unless behind a trusted proxy.
+  // The verifier MUST NOT trust client-supplied forwarded headers for origin binding
+  // canonicalization (see zk-credential spec §Origin binding).
+  app.set('trust proxy', false);
+
   app.use(cors({
     origin: config.corsOrigins ?? '*',
     exposedHeaders: [

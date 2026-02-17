@@ -190,13 +190,14 @@ export class CredentialIssuer {
   }
 
   /**
-   * Get the suite-prefixed public key string for x402 responses
+   * Get the public key as plain base64url (no suite prefix).
+   * Per spec, issuer_pubkey on the wire is raw base64url; the suite is
+   * carried in the companion issuer_suite / suite field.
    */
-  async getPublicKeyPrefixed(): Promise<string> {
+  async getPublicKeyBase64(): Promise<string> {
     const pubKey = await this.getPublicKey();
     const pubKeyBytes = pointToBytes(pubKey);
-    const pubKeyB64 = toBase64Url(pubKeyBytes);
-    return addSchemePrefix('pedersen-schnorr-poseidon-ultrahonk', pubKeyB64);
+    return toBase64Url(pubKeyBytes);
   }
 
   /**
